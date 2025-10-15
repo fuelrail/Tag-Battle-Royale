@@ -46,32 +46,32 @@
 > Outline the proposed project.
 > To achieve the previously described goal, Super Tag will implement the following features:
 
-> Roles
+- Roles
 > Players can select "it" or "not it" when starting the game. A player can switch to "it" at anytime during the game i.e. when
 > they are caught but can only select "not it" when the game begins.
 
-> Lobbies
+- Lobbies
 > Players will be able to create or join a lobby. When creating a lobby, players can adjust settings such as time between
 > zone changes and select the area to be played in from previously saved maps or the Map Editor. When joining a lobby, players 
 > can select roles and will download the map.
 
-> Map Editor.
+- Map Editor.
 > Using a map embed players can select an area to play in e.g a park. The selected area will be converted to an image 
 > and the player will be able to outline the sections for the game. This image will be saved for potential future 
 > games and will be shareable to other players when playing.
 
-> Player Position with GPS
+- Player Position with GPS
 > Using the players GPS and the map embed, the players position will be displayable on the map. This will allow the player to
 > see what section they are in and allow the players on the "it" team to see players who haven't been caught if they are in a
 > closed section.
 
-> Online \ Offline Mode
+- Online \ Offline Mode
 > Depending on where the game will take place, internet connection is not guaranteed. An Online and Offline mode will be implemneted
 > with important differences. In the Offline mode the position of other players will not be displayable and the person who begins
 > as "it" will be able to predefine the order in which zones will close. The other players will have this information but only those
 > who are "it" will have access to the order in which zones that are still open will close before the zones closing times.
 
-> P2P connection - Strech goal
+- P2P connection - Strech goal
 > For the offline mode a Peer to Peer connection system will be available although this just a strech goal.
 
 ### Background
