@@ -38,7 +38,7 @@
 > Super Tag aims to facilitate playing of the well-known game of tag but on a much larger scale than usual. Instead of 
 > running around your primary school playground, this game is designed to be played in much larger spaces like an entire 
 > park. The area the players will play in will be split into sections. The person who begins as "it" can close a section
-> around every 15 minutes making it so players cannot be in that section. When caught a player will join the "it" team 
+> around every 15 minutes making it so players cannot be in that section. When caught, a player will join the "it" team 
 > and the last person caught will win. 
 
 ### Outline
@@ -66,7 +66,7 @@
 > closed section.
 
 - Online \ Offline Mode
-> Depending on where the game will take place, internet connection is not guaranteed. An Online and Offline mode will be implemneted
+> Depending on where the game will take place, internet connection is not guaranteed. An Online and Offline mode will be implemented
 > with important differences. In the Offline mode the position of other players will not be displayable and the person who begins
 > as "it" will be able to predefine the order in which zones will close. The other players will have this information but only those
 > who are "it" will have access to the order in which zones that are still open will close before the zones closing times.
