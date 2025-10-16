@@ -35,52 +35,58 @@
 
 > Describe the general area covered by the project.
 
-> Super Tag aims to facilitate playing of the well-known game of tag but on a much larger scale than usual. Instead of 
-> running around your primary school playground, this game is designed to be played in much larger spaces like an entire 
-> park. The area the players will play in will be split into sections. The person who begins as "it" can close a section
-> around every 15 minutes making it so players cannot be in that section. When caught, a player will join the "it" team 
-> and the last person caught will win. 
+Super Tag aims to facilitate playing of the well-known game of tag but on a much larger scale than usual. Instead of 
+running around your primary school playground, this game is designed to be played in much larger spaces like an entire 
+park. The area the players will play in will be split into sections. The person who begins as "it" can close a section
+around every 15 minutes making it so players cannot be in that section. When caught, a player will join the "it" team 
+and the last person caught will win. 
 
 ### Outline
 
-> Outline the proposed project.
-> To achieve the previously described goal, Super Tag will implement the following features:
+Outline the proposed project.
+To achieve the previously described goal, Super Tag will implement the following features:
 
-- Roles
-> Players can select "it" or "not it" when starting the game. A player can switch to "it" at anytime during the game i.e. when
-> they are caught but can only select "not it" when the game begins.
+##### Roles
+Players can select "it" or "not it" when starting the game. A player can switch to "it" at anytime during the game i.e. when
+they are caught but can only select "not it" when the game begins.
 
-- Lobbies
-> Players will be able to create or join a lobby. When creating a lobby, players can adjust settings such as time between
-> zone changes and select the area to be played in from previously saved maps or the Map Editor. When joining a lobby, players 
-> can select roles and will download the map.
+##### Lobbies
+Players will be able to create or join a lobby. When creating a lobby, players can adjust settings such as time between
+zone changes and select the area to be played in from previously saved maps or the Map Editor. When joining a lobby, players 
+can select roles and will download the map.
 
-- Map Editor.
-> Using a map embed players can select an area to play in e.g a park. The selected area will be converted to an image 
-> and the player will be able to outline the sections for the game. This image will be saved for potential future 
-> games and will be shareable to other players when playing.
+##### Map Editor.
+Using a map embed players can select an area to play in e.g a park. The selected area will be converted to an image 
+and the player will be able to outline the sections for the game. This image will be saved for potential future 
+games and will be shareable to other players when playing.
 
-- Player Position with GPS
-> Using the players GPS and the map embed, the players position will be displayable on the map. This will allow the player to
-> see what section they are in and allow the players on the "it" team to see players who haven't been caught if they are in a
-> closed section.
+##### Player Position with GPS
+Using the players GPS and the map embed, the players position will be displayable on the map. This will allow the player to
+see what section they are in and allow the players on the "it" team to see players who haven't been caught if they are in a
+closed section.
 
-- Online \ Offline Mode
-> Depending on where the game will take place, internet connection is not guaranteed. An Online and Offline mode will be implemented
-> with important differences. In the Offline mode the position of other players will not be displayable and the person who begins
-> as "it" will be able to predefine the order in which zones will close. The other players will have this information but only those
-> who are "it" will have access to the order in which zones that are still open will close before the zones closing times.
+##### Online \ Offline Mode
+Depending on where the game will take place, internet connection is not guaranteed. An Online and Offline mode will be implemented
+with important differences. In the Offline mode the position of other players will not be displayable and the person who begins
+as "it" will be able to predefine the order in which zones will close. The other players will have this information but only those
+who are "it" will have access to the order in which zones that are still open will close before the zones closing times.
 
-- P2P connection - Strech goal
-> For the offline mode a Peer to Peer connection system will be available although this just a strech goal.
+##### P2P connection - Strech goal
+For the offline mode a Peer to Peer connection system will be available although this just a strech goal.
 
 ### Background
 
 > Where did the ideas come from?
 
+A member of out team played an informal version of this game a few years ago using snapchat to draw the sections and communicate.
+They noticed issues such as messages not being delivered causing players to not know which zones are closed and it being difficult
+to tell which zone you are currently in. We decided to solve these issues with this project.
+
+
 ### Achievements
 
 > What functions will the project provide? Who will the users be?
+
 
 ### Justification
 
