@@ -1,152 +1,94 @@
-# School of Computing &mdash; Year 4 Project Proposal Form
+# **School of Computing — Year 4 Project Proposal Form**
 
-> Edit (then commit and push) this document to complete your proposal form.
-> Make use of figures / diagrams where appropriate.
->
-> Do not rename this file.
+## **SECTION A**
 
-## SECTION A
+|  |  |
+| ----- | ----- |
+| Project Title: | Tag Battle Royale |
+| Student 1 Name: | Luan Slankster |
+| Student 1 ID: | 22406536 |
+| Student 2 Name: | Michael Cojocaru |
+| Student 2 ID: | 22380876 |
+| Project Supervisor: | Darragh O'Brien |
 
-|                     |                   |
-|---------------------|-------------------|
-|Project Title:       | Super Tag         |
-|Student 1 Name:      | Luan Slankster    |
-|Student 1 ID:        | 22406536          |
-|Student 2 Name:      | xxxxxx            |
-|Student 2 ID:        | xxxxxx            |
-|Project Supervisor:  | Darragh O'Brien   |
+## **SECTION B**
 
-> Ensure that the Supervisor formally agrees to supervise your project; this is only recognised once the
-> Supervisor assigns herself/himself via the project Dashboard.
->
-> Project proposals without an assigned
-> Supervisor will not be accepted for presentation to the Approval Panel.
+### **Introduction**
 
-## SECTION B
+Tag Battle Royale will be an app that facilitates the classic game of tag but with a twist that puts it on a much larger scale. The game is designed to be played in a large space such as an outdoor park which is selected through the app and split into zones. Each player will have the app downloaded, showing them the designated zones they can be in and when those zones will close as chosen by the Chasers. A zone will close every fifteen minutes by default. The app will have map and GPS features as well as a lobby system.
 
-> Guidance: This document is expected to be approximately 3 pages in length, but it can exceed this page limit.
-> It is also permissible to carry forward content from this proposal to your later documents (e.g. functional
-> specification) as appropriate.
->
-> Your proposal must include *at least* the following sections.
+### **Outline**
 
+To create Tag Battle Royale, the following features will be needed:
 
-### Introduction
+##### **Lobbies and Roles**
 
-> Describe the general area covered by the project.
+Players will be able to host and join lobbies using a lobby code system. The host that creates the lobby can adjust settings such as time between zone closures and select the space to be played in. Players will be able to view the map, type messages, and designate their roles between each other as Chaser or Runner. The Chasers can designate the zones on the selected space and the order in which they will close.
 
-Super Tag aims to facilitate playing of the well-known game of tag but on a much larger scale than usual. Instead of 
-running around your primary school playground, this game is designed to be played in much larger spaces like an entire 
-park. The area the players will play in will be split into sections. The person who begins as "it" can close a section
-around every 15 minutes making it so players cannot be in that section. When caught, a player will join the "it" team 
-and the last person caught will win. 
+##### **Map Editor, History and Replay**
 
-### Outline
+Using an embedded map, the host can select a space to play in, e.g a park, optionally with the assistance of GPS. The Chasers can designate the zones on the selected space by drawing them into the map using the app, an example of how this will look is shown in *figure 1*. The space and the corresponding zones as well as other information about the game played such as player locations will be saved into the players’ history. Previous maps can be retrieved to be used again and previous games will have a viewable replay.
 
-Outline the proposed project.
-To achieve the previously described goal, Super Tag will implement the following features:
+##### **Offline and Online Modes**
 
-##### Roles
-Players can select "it" or "not it" when starting the game. A player can switch to "it" at anytime during the game i.e. when
-they are caught but can only select "not it" when the game begins.
+We expect that a consistent internet connection for each game will not be guaranteed, so we plan to develop two separate modes that the host can choose between before creating a lobby. We want to first develop an offline mode that will only need players to connect to a lobby once before the game begins. In the offline mode, the players who begin as Chasers will predefine the order in which zones will close. The Runners’ apps will download this information but keep the order hidden until the zone is set to close. The online mode will have Chasers vote on which zone to close on the fly and have positions of players displayed on the map using GPS.
 
-##### Lobbies
-Players will be able to create or join a lobby. When creating a lobby, players can adjust settings such as time between
-zone changes and select the area to be played in from previously saved maps or the Map Editor. When joining a lobby, players 
-can select roles and will download the map.
+##### **P2P Connection**
 
-##### Map Editor.
-Using a map embed players can select an area to play in e.g a park. The selected area will be converted to an image 
-and the player will be able to outline the sections for the game. This image will be saved for potential future 
-games and will be shareable to other players when playing.
+We want to research having the game use a wifi direct Peer-to-Peer connection in cluster between devices. This will have the benefit of not needing a central server running to create lobbies and have a faster and more stable connection. We will develop a backup server in case our plans do not come into fruition.
 
-##### Player Position with GPS
-Using the players GPS and the map embed, the players position will be displayable on the map. This will allow the player to
-see what section they are in and allow the players on the "it" team to see players who haven't been caught if they are in a
-closed section.
+### **Background**
 
-##### Online \ Offline Mode
-Depending on where the game will take place, internet connection is not guaranteed. An Online and Offline mode will be implemented
-with important differences. In the Offline mode the position of other players will not be displayable and the person who begins
-as "it" will be able to predefine the order in which zones will close. The other players will have this information but only those
-who are "it" will have access to the order in which zones that are still open will close before the zones closing times.
+Luan played an informal version of this game a few years ago using Snapchat and Google Maps to manually draw the sections and communicate. He noticed issues such as players not being able to identify what zone they were in and messages not being delivered causing players to not know which zones are closed. We decided to create a dedicated app to solve these issues.
 
-##### P2P connection - Strech goal
-For the offline mode a Peer to Peer connection system will be available although this just a strech goal.
+### **Achievements**
 
-### Background
+The project will provide a fun party game to be played with a large group. We aim to have Tag Battle Royale be playable by anyone at any age and to do this, we must make our game easy to understand and our app easy to use. We must keep this in mind when designing every part of the project, the app must work well and be accessible to be successful. This will most likely require deep research into our required tools to have a good understanding in how to use them.
 
-> Where did the ideas come from?
+### **Justification**
 
-A member of out team played an informal version of this game a few years ago using snapchat to draw the sections and communicate.
-They noticed issues such as messages not being delivered causing players to not know which zones are closed and it being difficult
-to tell which zone you are currently in. We decided to solve these issues with this project.
+Tag Battle Royale will be a fun game for any large group to play. For us, the developers, creating Tag Battle Royale will give us insight into development of accessible android apps, using GPS in conjunction with maps, peer-to-peer connections and servers in the context of game development. 
 
+### **Programming language(s)**
 
-### Achievements
+* The application will be solely built using Flutter framework and a number of libraries which will use Dart programming language.
 
-> What functions will the project provide? Who will the users be?
+### **Programming tools / Tech stack**
 
+* Flutter Framework for building and compiling the application.  
+* Android Tools for building on Android.  
+* Flutter\_nearby\_connections library to be used for peer-to-peer.  
+* Google\_maps\_flutter library to be used for creating play space and zones.  
+* Geolocator library to be used for GPS tracking.  
+* Serverpod in conjunction with Flutter to be used as the backend server.
 
-### Justification
+### **Learning Challenges**
 
-> Why/when/where/how will it be useful?
+This project will be the first time we will be working on creating a usable native android app. Learning how to use Flutter Framework and Dart will be a challenge, although we are familiar with frontend web app building frameworks like React which should make things more manageable. We foresee the following tasks to be a challenge under Flutter:
 
-### Programming language(s)
+* Peer-to-peer connections  
+* Capturing and displaying of GPS data  
+* Google Map area selection
 
-> List the proposed language(s) to be used.
+Michael is familiar with working with maps through his third year project, which should eliminate some of the work.
 
-### Programming tools / Tech stack
+### **Breakdown of work**
 
-> Describe the compiler, database, web server, etc., and any other software tools you plan to use.
+#### **Student 1**
 
-### Hardware
+Luan will develop the UI for the app. Including the Map editor, displaying the GPS information and the replay function. Although this is a frontend focused position, he will assist with the development of the peer-to-peer connections.
 
-> Describe any non-standard hardware components which will be required.
+#### **Student 2**
 
-### Learning Challenges
+Michael will look into the online section of the app. He will research into how each device will communicate with each other, including: GPS tracking, peer-to-peer connections and backend server.
 
-> List the main new things (technologies, languages, tools, etc) that you will have to learn.
+### **Risk Register**
 
-### Breakdown of work
+| Description | Likelihood | Severity | Mitigation |
+| :---- | :---- | :---- | :---- |
+| Unable to get peer-to-peer networks to function | Middling | Low | We aim to have some peer-to-peer functionality in our app, if not able to implement for online mode, fall back to only on offline and if unable there, we have the web server to use. |
+| GPS functionality does not work | Low | Low | The app does not need GPS to function and can easily be built without it. |
 
-> Clearly identify who will undertake which parts of the project.
->
-> It must be clear from the explanation of this breakdown of work both that each student is responsible for
-> separate, clearly-defined tasks, and that those responsibilities substantially cover all of the work required
-> for the project.
-
-#### Student 1
-
-> *Student 1 should complete this section.*
-
-#### Student 2
-
-> *Student 2 should complete this section.*
-
-### Risk Register
-
-> You are to complete a risk register to demonstrate how you will account for the potential risks (i.e. something going wrong) when youa re working on your proiject. 
-> The purpose of a risk register is to identify potential issues beforehand and plan mitigation strategies to ensure the success of the project. 
-> The reisks are different for each project by some examples include 
-
-> if you are using physical components (e..g sensors), what happens if they never arrive, or if they break, or if they are not suitable?
-> if you are creating an AI/ML method , what happens if there is no suitable training data, or if the model performs poorly after training? 
-
-| Description | Likelyhood | Severity | Mitigation |
-|-------------|------------|----------|------------|
-|             |            |          |            |
-|             |            |          |            |
-|             |            |          |            |
-
-
-## Example
-
-> Example: Here's how you can include images in markdown documents...
-
-<!-- Basically, just use HTML! -->
-
-<p align="center">
-  <img src="./res/cat.png" width="300px">
-</p>
-
+## **Appendix**
+![Example Image](./images/example.jpg)
+Figure 1 A mockup showing a selected space split into zones.
