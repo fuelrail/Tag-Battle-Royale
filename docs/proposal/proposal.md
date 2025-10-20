@@ -91,4 +91,5 @@ Michael will look into the online section of the app. He will research into how 
 
 ## **Appendix**
 ![Example Image](./images/example.jpg)
+<br>
 Figure 1 A mockup showing a selected space split into zones.
