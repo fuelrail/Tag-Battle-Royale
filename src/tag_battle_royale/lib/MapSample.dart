@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geolocator/geolocator.dart'; 
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'gps.dart';
+
+//TEMPTEMPTEMP
+import 'dart:ui' as ui;
+import 'pages/ImageEditorPage.dart';
 
 class MapSample extends StatefulWidget {
   const MapSample({super.key});
@@ -56,19 +59,49 @@ class MapSampleState extends State<MapSample> {
   }
 
 
-  Future<void> _captureMap() async {
-    if (_controller.isCompleted) {
-      final controller = await _controller.future;
-
-      final bytes = await controller.takeSnapshot();
-      final bounds = await controller.getVisibleRegion();
-      if (bytes == null) return;
-
-    setState(() => _imageBytes = bytes);
-    setState(() => _imageBounds = bounds);
+  Future<ui.Image> _captureMap() async {
+    if (!_controller.isCompleted) {
+      throw StateError('Map controller not ready');
     }
+
+    final controller = await _controller.future;
+
+    final bytes = await controller.takeSnapshot();
+    if (bytes == null) {
+      throw StateError('Failed to capture snapshot');
+    }
+    final bounds = await controller.getVisibleRegion();
+    setState(() {
+      _imageBytes = bytes;
+      _imageBounds = bounds;
+    });
+    return await _getImage(bytes);
   }
 
+  Future<void> _goToEditImagePage() async{
+    try {
+      final image = await _captureMap();
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ImageEditorPage(image: image),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not capture map: $e')),
+      );
+    }
+  }
+ 
+ //TEMPTEMPTEMP
+  Future<ui.Image> _getImage(Uint8List bytes) async{
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frameInfo = await codec.getNextFrame();
+    return frameInfo.image;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -76,54 +109,31 @@ class MapSampleState extends State<MapSample> {
       return Scaffold(body: Center(child: Text(_error!)));
     }
 
-    final lat = _userPosition?.target.latitude;
-    final lng = _userPosition?.target.longitude;
-
     return Scaffold(
       body: Column(
-        children: [
-          const SizedBox(height: 40),
-          const Text("Your location"),
-          Expanded(
-            child: GoogleMap(
-              mapType: MapType.hybrid,
-              initialCameraPosition: _userPosition ?? _dublinSpire,
+          children: [
+            const SizedBox(height: 40),
+            Expanded(child: GoogleMap(
+                mapType: MapType.hybrid,
+                initialCameraPosition: _userPosition ?? _dublinSpire,
+                myLocationEnabled: true,
+                myLocationButtonEnabled: true,
+                onCameraMove: (pos){setState(() => _userPosition = pos);},
 
-              myLocationEnabled: true,
-              myLocationButtonEnabled: true,
-              onCameraMove: (pos){setState(() => _userPosition = pos);},
-
-              onMapCreated: (GoogleMapController controller) {
-                if (!_controller.isCompleted) _controller.complete(controller);
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: ElevatedButton(
-              onPressed: _captureMap,
-              child: const Text('Capture map image'),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Text(
-              'Lat: ${lat}\nLng: ${lng}',
-              textAlign: TextAlign.center,
-            ),
-          ),
-          if (_imageBytes != null) ...[
-            Text(_imageBounds.toString()),
-            SizedBox(
-              height: 160,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Image.memory(_imageBytes!, fit: BoxFit.contain),
+                onMapCreated: (GoogleMapController controller) {
+                  if (!_controller.isCompleted) _controller.complete(controller);
+                },
               ),
-            ),],
-          const SizedBox(height: 12),
-        ],
-      ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: ElevatedButton(
+                 onPressed: _goToEditImagePage,
+                child: const Text('Edit!'),
+              ),
+            ),
+          ],
+        ),
     );
   }
 

@@ -1,5 +1,7 @@
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:tag_battle_royale/MapSample.dart';
 import 'pages/Home.dart';
 import 'pages/Create_Lobby.dart';
 import 'pages/Join_Lobby.dart';
@@ -7,6 +9,7 @@ import 'pages/Map_Editor.dart';
 import 'pages/Lobby.dart';
 
 void main() {
+  debugRepaintRainbowEnabled= true;
   runApp(const MyApp());
 }
 
@@ -21,7 +24,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const Home(),
+      home: const MapSample(),
       routes: {
         "/Home" : (context) => const Home(),
         "/Lobby" : (context) => const Lobby(),
