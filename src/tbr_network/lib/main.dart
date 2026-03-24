@@ -3,8 +3,12 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import 'offlinegamelobby.dart';
+import 'onlinegamescreen.dart';
 import 'onlinegamelobby.dart';
+import 'storage/gamesession.dart';
 import 'location_permission.dart';
+import '/services/game_socket_service.dart';
+import '/services/location_service.dart';
 
 void main() => runApp(const MyApp());
 
@@ -30,14 +34,165 @@ class MyApp extends StatelessWidget {
 //  Screen 1: Choose Offline or Online mode
 // --------------------------------------------------------------------------
 
-class ModeSelectionScreen extends StatelessWidget {
+class ModeSelectionScreen extends StatefulWidget {
   const ModeSelectionScreen({super.key});
+
+  @override
+  State<ModeSelectionScreen> createState() => _ModeSelectionScreenState();
+}
+
+class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
+  static const String serverUrl = 'https://tag-battle-royale.fly.dev/';
+  
+  GameSessionData? _savedSession;
+  bool _reconnecting = false;
+  String? _reconnectError;
+
+  // Socket/location for active game reconnection
+  GameSocketService? _socket;
+  LocationService? _location;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkForSavedSession();
+  }
+
+  Future<void> _checkForSavedSession() async {
+    final session = await GameSession.load();
+    if (mounted) {
+      setState(() {
+        _savedSession = session;
+        _reconnectError = null;
+      });
+    }
+  }
 
   void _go(BuildContext ctx, GameMode mode) {
     Navigator.push(
       ctx,
       MaterialPageRoute(builder: (_) => RoleSelectionScreen(mode: mode)),
-    );
+    ).then((_) => _checkForSavedSession());
+  }
+
+  // Reconnect 
+
+  Future<void> _reconnect(BuildContext ctx) async {
+    // Could have lost the savedSession
+    if (_savedSession == null) return;
+
+    if (!await checkLocationPermission(ctx)) return;
+    // We need to check if we are still on this screen because we could have left
+    // due to the async await.
+    if (!ctx.mounted) return;
+
+    // If the game didn't start, we know we were not a host, because leaving an unstarted
+    // game while host disbands it. Our details was not saved on the server, so just
+    // join it again anew and move to lobby screen.
+    if (!_savedSession!.gameStarted) {
+      Navigator.push(
+        ctx,
+        MaterialPageRoute(
+          builder: (_) => OnlineConnectionScreen(
+            role: ConnectionRole.join,
+            playerName: _savedSession!.playerName,
+            gameCode: _savedSession!.gameId,
+          ),
+        ),
+      ).then((_) => _checkForSavedSession());
+    } else {
+      // Connect via the same socket
+      _startActiveReconnect();
+    }
+  }
+
+  void _startActiveReconnect() {
+    setState(() {
+      _reconnecting = true;
+      _reconnectError = null;
+    });
+
+    _socket = GameSocketService(serverUrl: serverUrl);
+    _location = LocationService(gameSocketService: _socket!);
+
+    _socket!.currentGameId = _savedSession!.gameId;
+    _socket!.currentPlayerId = _savedSession!.playerId;
+
+    _socket!.onRejoined = (data) {
+      // This callback could be fired after the user leaves the screen
+      // or during the timeout cleanup.
+      if (!mounted || !_reconnecting) return;
+
+      _location!.startTracking();
+
+      // We pass a reference to our socket and then unhook and dispose it.
+      // This way, if we dispose the game screen, it disposes its version
+      // of the socket and avoids a bug where we double dispose.
+      final socket = _socket!;
+      final location = _location!;
+      _socket!.onRejoined = null;
+      _socket!.onError = null;
+      _socket = null;
+      _location = null;
+
+      setState(() => _reconnecting = false);
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OnlineGameScreen(
+            socket: socket,
+            location: location,
+            gameId: _savedSession!.gameId,
+            isHost: _savedSession!.isHost,
+          ),
+        ),
+      // We create a saved session if they leave for if they'd like to reconnect again
+      ).then((_) => _checkForSavedSession());
+    };
+
+    _socket!.onError = (event, message) {
+      if (!mounted || !_reconnecting) return;
+      if (event == 'game:rejoin' || event == 'connection') {
+        GameSession.clear();
+        _cleanupReconnect();
+        setState(() {
+          _reconnecting = false;
+          _reconnectError = 'Could not reconnect, game may no longer exist';
+          _savedSession = null;
+        });
+      }
+    };
+
+    _socket!.connect();
+
+    // Timeout
+    Future.delayed(const Duration(seconds: 15), () {
+      if (mounted && _reconnecting) {
+        GameSession.clear();
+        _cleanupReconnect();
+        setState(() {
+          _reconnecting = false;
+          _reconnectError = 'Connection timed out';
+          _savedSession = null;
+        });
+      }
+    });
+  }
+
+  void _cleanupReconnect() {
+    _socket?.onRejoined = null;
+    _socket?.onError = null;
+    _location?.dispose();
+    _socket?.disconnect();
+    _socket = null;
+    _location = null;
+  }
+
+  @override
+  void dispose() {
+    _cleanupReconnect();
+    super.dispose();
   }
 
   @override
@@ -54,13 +209,76 @@ class ModeSelectionScreen extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: Theme.of(context).colorScheme.surfaceContainerHighest)),
             const SizedBox(height: 48),
+
+            // Reconnect error message
+            if (_reconnectError != null) ...[
+              Card(
+                color: Theme.of(context).colorScheme.errorContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(children: [
+                    Icon(Icons.error_outline,
+                        color: Theme.of(context).colorScheme.error),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_reconnectError!)),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // Reconnecting spinner
+            if (_reconnecting) ...[
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Row(children: [
+                    CircularProgressIndicator(strokeWidth: 2),
+                    SizedBox(width: 16),
+                    Text('Reconnecting...'),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // Reconnect button
+            if (_savedSession != null && !_reconnecting) ...[
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.refresh),
+                  label: Text('Reconnect to ${_savedSession!.gameId}'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () => _reconnect(context),
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Go away
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () async {
+                    await GameSession.clear();
+                    _checkForSavedSession();
+                  },
+                  child: const Text('Dismiss'),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
             SizedBox(
               width: double.infinity,
               height: 56,
               child: FilledButton.icon(
                 icon: const Icon(Icons.cloud),
                 label: const Text('Online'),
-                onPressed: () => _go(context, GameMode.online),
+                onPressed: _reconnecting ? null : () => _go(context, GameMode.online),
               ),
             ),
             const SizedBox(height: 16),
@@ -70,7 +288,7 @@ class ModeSelectionScreen extends StatelessWidget {
               child: FilledButton.tonalIcon(
                 icon: const Icon(Icons.cloud_off),
                 label: const Text('Offline'),
-                onPressed: () => _go(context, GameMode.offline),
+                onPressed: _reconnecting ? null : () => _go(context, GameMode.offline),
               ),
             ),
           ]),

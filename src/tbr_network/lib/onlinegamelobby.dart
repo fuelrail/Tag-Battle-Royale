@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../services/game_socket_service.dart';
 import '../services/location_service.dart';
+import '/storage/gamesession.dart';
 import 'onlinegamescreen.dart';
 
-import 'main.dart';
+import 'main.dart'; 
 
 // --------------------------------------------------------------------------
 //  Online Lobby Screen: create/join a game, wait for host to start.
@@ -93,12 +94,21 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       if (!mounted) return;
       setState(() => _gameId = data['game']['id']);
       _addLog('Game created: $_gameId (you are ${data['playerId']})');
+      // Host doesn't save session during lobby, leaving disbands the game
     };
 
     _socket!.onGameJoined = (data) {
       if (!mounted) return;
       setState(() => _gameId = data['game']['id']);
       _addLog('Joined game: $_gameId');
+      // Save session so joiners can reconnect to lobby if they disconnect
+      GameSession.save(
+        gameId: _socket!.currentGameId!,
+        playerId: _socket!.currentPlayerId!,
+        playerName: widget.playerName,
+        isHost: false,
+        gameStarted: false,
+      );
     };
 
     _socket!.onPlayerJoined = (data) {
@@ -137,11 +147,21 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   }
 
   void _onGameStarted() {
+    // Save session for host and joiners for active game
+    GameSession.save(
+      gameId: _socket!.currentGameId!,
+      playerId: _socket!.currentPlayerId!,
+      playerName: widget.playerName,
+      isHost: isHost,
+      gameStarted: true,
+    );
+
+    // Start location tracking
     _location!.startTracking();
 
     // We pass a reference to our socket and then unhook and dispose it.
     // This way, if we dispose the game screen, it disposes its version
-    // of the socket and avoids a bug where we double dispose.    
+    // of the socket and avoids a bug where we double dispose.
     final socket = _socket!;
     final location = _location!;
     _unhookCallbacks();
@@ -162,7 +182,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     );
   }
 
-  // Logging  
+  // Logging
   void _addLog(String message) {
     if (!mounted) return;
     setState(() {
@@ -235,7 +255,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Game state
+            // Game state 
             if (_status == 'Disconnected' || _status == 'Reconnecting...')
               const Center(child: CircularProgressIndicator())
             else if (_status == 'Error')

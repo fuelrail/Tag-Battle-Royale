@@ -57,6 +57,11 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
       _addLog('Disconnected, reconnecting...');
     };
 
+    _socket.onRejoined = (data) {
+      if (!mounted) return;
+      _addLog('Rejoined game');
+    };
+
     _socket.onPlayerJoined = (data) {
       if (!mounted) return;
       _addLog('${data['playerName']} joined');
@@ -86,6 +91,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
           ..clear()
           ..addAll(players);
       });
+      _addLog('Received broadcast with ${players.length} players');
     };
 
     _socket.onError = (event, message) {
@@ -112,6 +118,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
     _location.onLog = null;
     _socket.onConnected = null;
     _socket.onDisconnected = null;
+    _socket.onRejoined = null;
     _socket.onPlayerJoined = null;
     _socket.onPlayerLeft = null;
     _socket.onPlayerReconnected = null;
@@ -131,12 +138,15 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
+      // Prevent back button/gesture from leaving the game screen
       canPop: false,
       child: Scaffold(
         appBar: AppBar(
+          // No back arrow
           automaticallyImplyLeading: false,
           title: Text('Game ${widget.gameId}'),
           actions: [
+            // Connection status indicator
             Padding(
               padding: const EdgeInsets.only(right: 16),
               child: Icon(

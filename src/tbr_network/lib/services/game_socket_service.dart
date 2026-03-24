@@ -15,8 +15,8 @@ class PlayerLocationInfo {
   final double? heading;
   final double? speed;
   final double? accuracy;
-  final int? locationAge;
-  final int? disconnectedAge;
+  final int? locationAge; // ms since last location update
+  final int? disconnectedAge; // ms since disconnect (only for "disconnected" status)
 
   PlayerLocationInfo({
     required this.playerId,
@@ -31,9 +31,18 @@ class PlayerLocationInfo {
     this.disconnectedAge,
   });
 
+  /// Whether the server has a recent location for this player.
   bool get hasLocation => status == "active";
+
+  /// Whether the player's location is outdated
+  /// The client can show "Last seen x seconds ago" using [locationAge].
   bool get isStale => status == "stale";
+
+  /// Whether the player has never sent a location.
   bool get isUnknown => status == "unknown";
+
+  /// Whether the player's socket dropped. May reconnect.
+  /// The client can show "Disconnected xs ago" using [disconnectedAge].
   bool get isDisconnected => status == "disconnected";
 
   factory PlayerLocationInfo.fromJson(Map<String, dynamic> json) {
@@ -55,43 +64,78 @@ class PlayerLocationInfo {
 
 /// Manages the Socket.IO connection to the game server.
 ///
-/// Callbacks are used to notify of events.
+/// Callbacks are used to notify of events. 
+/// 
+/// On reconnection, if [currentGameId] and [currentPlayerId] are set,
+/// the service will attempt to rejoin the game via game:rejoin.
 class GameSocketService {
   final String serverUrl;
   late IO.Socket _socket;
   bool _connected = false;
 
+  // Stored information for reconnection
   String? currentGameId;
   String? currentPlayerId;
 
+
   VoidCallback? onConnected;
+
   VoidCallback? onDisconnected;
+
+  /// data: { game: { id, status, players, ... }, playerId }
   JsonCallback? onGameCreated;
+
+  /// data: { game: { id, status, players, ... }, playerId }
   JsonCallback? onGameJoined;
+
+  /// data: { playerId, playerName, players: [...] }
   JsonCallback? onPlayerJoined;
+
+  /// data: { playerId, playerName, remainingPlayers: [...] }
   JsonCallback? onPlayerLeft;
+
+  /// data: { gameId, startedAt }
   JsonCallback? onGameStarted;
+
+  /// Fired on any server error
   ErrorCallback? onError;
+
+  /// data: { playerId, playerName, players }
   JsonCallback? onPlayerReconnected;
+
+  /// data: { playerId, playerName, players }
   JsonCallback? onPlayerDisconnected;
+
+  /// data: { game, playerId }
+  JsonCallback? onRejoined;
+
+  /// players: {playerId: PlayerLocationInfo}
   LocationBroadcastCallback? onLocationBroadcast;
 
   GameSocketService({required this.serverUrl});
 
   bool get isConnected => _connected;
 
+  
+  // Connections
   void connect() {
     _socket = IO.io(serverUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': true,
       'reconnection': true,
-      'reconnectionAttempts': double.infinity,
+      'reconnectionAttempts': double.infinity, // never stop trying
       'reconnectionDelay': 1000,
-      'reconnectionDelayMax': 10000,
+      'reconnectionDelayMax': 10000, // back off up to 10s between attempts
     });
 
     _socket.onConnect((_) {
       _connected = true;
+
+      // If we were in a game before disconnecting, try to rejoin automatically
+      if (currentGameId != null && currentPlayerId != null) {
+        _attemptRejoin();
+      }
+
       onConnected?.call();
     });
 
@@ -132,14 +176,38 @@ class GameSocketService {
 
     _socket.on('location:broadcast', (data) {
       final playersRaw = Map<String, dynamic>.from(data);
+
       final players = playersRaw.map((key, value) => MapEntry(
             key, PlayerLocationInfo.fromJson(Map<String, dynamic>.from(value))));
+
       onLocationBroadcast?.call(players);
     });
 
     _socket.on('error', (data) {
       final d = Map<String, dynamic>.from(data);
       onError?.call(d['event'] ?? 'unknown', d['message'] ?? 'Unknown error');
+    });
+  }
+
+  // Rejoin after a socket reconnection
+  void _attemptRejoin() {
+    print('[GameSocketService] Attempting rejoin: game=$currentGameId player=$currentPlayerId');
+
+    _socket.emitWithAck('game:rejoin', {
+      'gameId': currentGameId,
+      'playerId': currentPlayerId,
+    }, ack: (response) {
+      final d = Map<String, dynamic>.from(response);
+      if (d['ok'] == true) {
+        print('[GameSocketService] Rejoin successful');
+        onRejoined?.call(d);
+      } else {
+        // Rejoin failed — game or player no longer exists
+        print('[GameSocketService] Rejoin failed: ${d['error']}');
+        currentGameId = null;
+        currentPlayerId = null;
+        onError?.call('game:rejoin', d['error'] ?? 'Rejoin failed');
+      }
     });
   }
 
@@ -179,7 +247,8 @@ class GameSocketService {
   void startGame() {
     _socket.emit('game:start');
   }
-
+  
+  /// Intentionally leave the game, this fully removes you from the server.
   void leaveGame() {
     _socket.emit('game:leave');
     currentGameId = null;
@@ -187,6 +256,7 @@ class GameSocketService {
   }
 
   // Location
+  /// Send your current location to the server.
   void sendLocation({
     required double lat,
     required double lng,
@@ -194,7 +264,7 @@ class GameSocketService {
     double? speed,
     double? accuracy,
   }) {
-    if (!_connected) return;
+    if (!_connected) return; 
     _socket.emit('location:update', {
       'lat': lat,
       'lng': lng,
