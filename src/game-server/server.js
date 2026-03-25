@@ -5,6 +5,7 @@ const cors = require("cors");
 const { GameManager } = require("./game/GameManager");
 const { registerGameHandlers } = require("./handlers/gameHandlers");
 const { registerLocationHandlers } = require("./handlers/locationHandlers");
+const { registerChatHandlers } = require("./handlers/chatHandlers");
 const gameRoutes = require("./routes/gameRoutes");
 
 const PORT = process.env.PORT || 3000;
@@ -47,6 +48,7 @@ io.on("connection", (socket) => {
   // Register all event handlers for this socket
   registerGameHandlers(io, socket, gameManager);
   registerLocationHandlers(io, socket, gameManager);
+  registerChatHandlers(io, socket, gameManager);
 
   // --- Disconnect ---
   //

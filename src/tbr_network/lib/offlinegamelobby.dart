@@ -102,11 +102,11 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   final int maxConnections = 1; // needs testing to get the right number, but 3 is probably safe
 
   // Connected Endpoints
-  Map<String, ConnectionInfo> endpointMap = {}; // endpointId -> ConnectionInfo
-  Map<String, String> connectedNames = {}; // endpointId -> userName
+  Map<String, ConnectionInfo> endpointMap = {}; // { endpointId: ConnectionInfo }
+  Map<String, String> connectedNames = {}; // { endpointId: userName }
 
   // Discovered Endpoints
-  Map<String, DiscoveredEndpoint> discoveredEndpoints = {}; // endpointId -> DiscoveredEndpoint
+  Map<String, DiscoveredEndpoint> discoveredEndpoints = {}; // { endpointId: DiscoveredEndpoint }
 
   bool _isActive = false; // advertising or discovering
   bool _isPseudoHost = false; 
@@ -121,7 +121,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   bool get amHost => isHost || _isPseudoHost;
 
   // Topology (for host)
-  final Map<String, List<String>> _tree = {}; // userName -> [userName -> [...]] 
+  final Map<String, List<String>> _tree = {}; // Tree structure
   final Set<String> _pseudoHosts = {}; // Set of userNames that are pseudoHosts already
 
   @override

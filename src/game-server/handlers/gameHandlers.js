@@ -8,13 +8,13 @@
 //   game:start    (no payload)
 //
 // Events given to client via callback:
-//   game:create  -> { ok, game, playerId }
-//   game:join    -> { ok, game, playerId }
-//   game:rejoin  -> { ok, game, playerId }
-//   game:leave   -> { ok }
-//   game:start   -> { ok }
+//   game:create   { ok, game, playerId }
+//   game:join     { ok, game, playerId }
+//   game:rejoin   { ok, game, playerId }
+//   game:leave    { ok }
+//   game:start    { ok }
 //
-// Events emitted to other players in the room:
+// Events emitted to players:
 //   player:joined        { playerId, playerName, players }
 //   player:left          { playerId, playerName, remainingPlayers }
 //   player:reconnected   { playerId, playerName, players }

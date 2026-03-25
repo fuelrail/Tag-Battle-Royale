@@ -1,7 +1,7 @@
 class Game {
   constructor(id, config = {}) {
     this.id = id;
-    this.players = new Map(); // playerId -> Player
+    this.players = new Map(); // { playerId: Player }
     this.status = "waiting"; // waiting or active or finished
     this.createdAt = Date.now();
     this.maxPlayers = config.maxPlayers || 10;

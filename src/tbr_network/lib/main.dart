@@ -207,7 +207,7 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
             const SizedBox(height: 8),
             Text('Choose your connection mode',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest)),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
             const SizedBox(height: 48),
 
             // Reconnect error message
