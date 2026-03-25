@@ -10,10 +10,10 @@ class NavigationButton extends StatelessWidget {
     required this.destination});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context){
     return ElevatedButton(
       child: Text(displayText),
-      onPressed: () {
+      onPressed: (){
         Navigator.pushNamed(context, destination);
       },
     );
