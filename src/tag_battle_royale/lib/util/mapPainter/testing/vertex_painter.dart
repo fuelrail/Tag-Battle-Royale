@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-
-import '../faceDetection/face_detection_graph.dart';
+import '../../faceDetection/face_detection_graph.dart';
 
 class VertexPainter extends CustomPainter{
   final List<Vertex> vertice;
