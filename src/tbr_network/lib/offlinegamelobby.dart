@@ -7,9 +7,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:nearby_connections/nearby_connections.dart';
 
-import '../services/game_socket_service.dart'; // for ChatMessage
+import '../services/game_socket_service.dart'; 
 import 'main.dart';
-import 'permissions.dart';
 import 'lobby.dart';
 
 // --------------------------------------------------------------------------
@@ -27,7 +26,8 @@ class Cmd {
   static const String hostTarget = 'HOST';
 
   // Build
-  static String username(String name) => '$_username$name';
+  static String username(String userName, String displayName) =>
+      '$_username$userName|$displayName';
   static String becomeHost(String lobby) => '$_becomeHost$lobby';
   static String reportChild(String parent, String child) =>
       '$_reportChild$parent:$child';
@@ -37,8 +37,10 @@ class Cmd {
       '$_relay$from:$to:$inner';
   static String chat(String playerName, String text) =>
       '$_chat$playerName:$text';
-  static String playerList(List<String> names) =>
-      '$_playerList${names.join(',')}';
+  static String playerList(List<Map<String, String>> players) {
+    final entries = players.map((p) => '${p['id']}|${p['name']}').join(',');
+    return '$_playerList$entries';
+  }
 
   // Check
   static bool isUsername(String message) => message.startsWith(_username);
@@ -50,7 +52,12 @@ class Cmd {
   static bool isPlayerList(String message) => message.startsWith(_playerList);
 
   // Parse
-  static String parseUsername(String message) => message.substring(_username.length);
+  static (String userName, String displayName) parseUsername(String message) {
+    final payload = message.substring(_username.length);
+    final parts = payload.split('|');
+    return (parts[0], parts[1]);
+  }
+
   static String parseBecomeHost(String message) => message.substring(_becomeHost.length);
 
   static (String parent, String child) parseReportChild(String message) {
@@ -76,8 +83,15 @@ class Cmd {
     return (payload.substring(0, i), payload.substring(i + 1));
   }
 
-  static List<String> parsePlayerList(String message) =>
-      message.substring(_playerList.length).split(',').where((s) => s.isNotEmpty).toList();
+  static List<Map<String, String>> parsePlayerList(String message) {
+    final payload = message.substring(_playerList.length);
+    final list = <Map<String, String>>[];
+    for (final entry in payload.split(',').where((s) => s.isNotEmpty)) {
+      final parts = entry.split('|');
+      list.add({'id': parts[0], 'name': parts[1]});
+    }
+    return list;
+  }
 }
 
 class DiscoveredEndpoint {
@@ -94,9 +108,9 @@ class DiscoveredEndpoint {
 
 class OfflineConnectionScreen extends StatefulWidget {
   const OfflineConnectionScreen(
-      {super.key, required this.role, this.nickName, required this.lobbyName});
+      {super.key, required this.role, required this.nickName, required this.lobbyName});
   final ConnectionRole role;
-  final String? nickName; // not yet implemented
+  final String nickName;
   final String lobbyName;
 
   @override
@@ -106,6 +120,7 @@ class OfflineConnectionScreen extends StatefulWidget {
 
 class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   final String userName = 'User-${Random().nextInt(10000)}';
+  late final String displayName; // nickName if provided, otherwise userName
   final Strategy strategy = Strategy.P2P_CLUSTER;
   final int maxConnections = 1;
 
@@ -116,7 +131,8 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   // Discovered Endpoints
   Map<String, DiscoveredEndpoint> discoveredEndpoints = {}; // { endpointId: DiscoveredEndpoint }
 
-  bool _isActive = false; // advertising or discovering
+  bool _isAdvertising = false;
+  bool _isDiscovering = false;
   bool _isPseudoHost = false; 
   late String _lobbyName;
   
@@ -133,7 +149,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   final Set<String> _pseudoHosts = {}; // Set of userNames that are pseudoHosts already
 
   // Shared lobby data
-  final List<Map<String, String>> _players = []; // [{ id: name }]
+  final List<Map<String, String>> _players = []; // [{ id: userName, name: displayName }]
   final Map<String, Color> _playerColourMap = {}; // { playerId: Color }
   final List<ChatMessage> _chatMessages = [];
   final List<String> _log = [];
@@ -142,11 +158,15 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   @override
   void initState() {
     super.initState();
+    displayName = widget.nickName;
     _lobbyName = widget.lobbyName;
     if (isHost) {
       _tree[userName] = [];
       // Add self to player list
-      _players.add({'id': userName, 'name': userName});
+      _players.add({'id': userName, 'name': displayName});
+      _startAdvertising();
+    } else {
+      _startDiscovery();
     }
   }
   
@@ -170,28 +190,43 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     });
   }
 
-  // Player List
+  // --- Display Helpers ---
+
+  /// Returns "displayName (userName)".
+  /// If displayName equals userName, just shows userName.
+String _displayForUser(String userName) {
+    for (final player in _players) {
+      if (player['id'] == userName && player['name'] != userName) {
+        return '${player['name']} ($userName)';
+      }
+    }
+    return userName;
+  }
+
+  // --- Player List ---
 
   /// Updates the local player list and floods the full list to the network.
   void _broadcastPlayerList() {
-    final allNames = _tree.keys.toList();
-    final msg = Cmd.playerList(allNames);
-    _flood(msg);
-    // Update locally too
-    setState(() {
-      _players.clear();
-      for (final name in allNames) {
-        _players.add({'id': name, 'name': name});
+    // Ensure every node in the tree has an entry in _players
+    for (final userName in _tree.keys) {
+      if (!_players.any((player) => player['id'] == userName)) {
+        _players.add({'id': userName, 'name': userName});
       }
-    });
+    }
+    // Remove any players no longer in the tree
+    _players.removeWhere((p) => !_tree.containsKey(p['id']));
+
+    final msg = Cmd.playerList(_players);
+    _flood(msg);
+    setState(() {});
   }
 
-  // Chat
+  // --- Chat ---
 
   void _sendChatMessage(String text) {
     if (text.isEmpty) return;
-    final msg = Cmd.chat(userName, text);
-    _receiveChatMessage(userName, text); 
+    final msg = Cmd.chat(displayName, text);
+    _receiveChatMessage(displayName, text); 
     _flood(msg);
   }
 
@@ -206,7 +241,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     });
   }
 
-  // Message Sending
+  // --- Message Sending ---
 
   void _sendBytes(String endpointId, String message) {
     Nearby().sendBytesPayload(
@@ -280,11 +315,14 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   /// Process a command.
   void _processMessage(String message, {String? fromEndpointId, String? relaySender}) {
     if (Cmd.isUsername(message)) {
-      final name = Cmd.parseUsername(message);
+      final (userName, displayName) = Cmd.parseUsername(message);
       if (fromEndpointId != null) {
-        setState(() => connectedNames[fromEndpointId] = name);
+        setState(() => connectedNames[fromEndpointId] = userName);
       }
-      _addLog("$name connected");
+      // Store their display name in the player list
+      _players.removeWhere((player) => player['id'] == userName);
+      _players.add({'id': userName, 'name': displayName});
+      _addLog("${_displayForUser(userName)} connected");
       
     } else if (Cmd.isBecomeHost(message)) {
       final lobby = Cmd.parseBecomeHost(message);
@@ -308,12 +346,10 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       }
 
     } else if (Cmd.isPlayerList(message)) {
-      final names = Cmd.parsePlayerList(message);
+      final players = Cmd.parsePlayerList(message);
       setState(() {
         _players.clear();
-        for (final name in names) {
-          _players.add({'id': name, 'name': name});
-        }
+        _players.addAll(players);
       });
       // Flood again to reach everyone in tree
       if (fromEndpointId != null) {
@@ -406,9 +442,9 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   void _hostEnsureAdvertiser() {
     // Check if the host itself is below capacity
     if ((_tree[userName]?.length ?? 0) < maxConnections) {
-      if (!_isActive && isHost) {
+      if (!_isAdvertising && isHost) {
         _addLog("Host has capacity again, re-advertising");
-        _restartAdvertising();
+        _startAdvertising();
       }
       return;
     }
@@ -468,7 +504,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
         onConnectionResult: (id, status) => _onConnectionResult(id, status),
         onDisconnected: (id) => _onDisconnected(id),
       );
-      setState(() => _isActive = a);
+      setState(() => _isAdvertising = a);
       _addLog("Pseudo-host advertising '$lobbyName': $a");
     } catch (e) {
       _addLog("Pseudo-host advertising failed: $e");
@@ -486,7 +522,8 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
     setState(() {
       _isPseudoHost = false;
-      _isActive = false;
+      _isAdvertising = false;
+      _isDiscovering = false;
       _parentEndpointId = null;
       _lobbyName = '';
       endpointMap.clear();
@@ -494,16 +531,14 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       discoveredEndpoints.clear();
       _players.clear();
     });
+
+    // Restart discovery to find a new lobby
+    _startDiscovery();
   }
 
   // --- Advertising ---
 
   Future<void> _startAdvertising() async {
-    if (!await checkOfflinePermissions(context)) return;
-    _restartAdvertising();
-  }
-
-  Future<void> _restartAdvertising() async {
     try {
       await Nearby().stopAdvertising();
       final a = await Nearby().startAdvertising(
@@ -513,8 +548,8 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
         onConnectionResult: (id, status) => _onConnectionResult(id, status),
         onDisconnected: (id) => _onDisconnected(id),
       );
-      setState(() => _isActive = a);
-      _addLog("Advertising '$_lobbyName': $a");
+      setState(() => _isAdvertising = a);
+      _addLog("Advertising '$_lobbyName'");
     } catch (e) {
       _addLog("Advertising failed: $e");
     }
@@ -522,13 +557,12 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
   Future<void> _stopAdvertising() async {
     await Nearby().stopAdvertising();
-    setState(() => _isActive = false);
+    setState(() => _isAdvertising = false);
   }
 
   // --- Discovery ---
 
   Future<void> _startDiscovery() async {
-    if (!await checkOfflinePermissions(context)) return;
     try {
       final a = await Nearby().startDiscovery(
         userName,
@@ -547,17 +581,17 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
           setState(() => discoveredEndpoints.remove(id));
         },
       );
-      setState(() => _isActive = a);
+      setState(() => _isDiscovering = a);
       _addLog("Discovering lobbies…");
     } catch (e) {
-      _addLog("Discovering failed: $e");
+      _addLog("Discovery failed: $e");
     }
   }
 
   Future<void> _stopDiscovery() async {
     await Nearby().stopDiscovery();
     setState(() {
-      _isActive = false;
+      _isDiscovering = false;
       discoveredEndpoints.clear();
     });
   }
@@ -618,17 +652,13 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       return;
     }
 
-    // Exchange display names.
-    _sendBytes(id, Cmd.username(userName));
+    // Exchange user and display names.
+    _sendBytes(id, Cmd.username(userName, displayName));
 
     // Joiner successfully connected, stop discovering and clear the list
     if (!amHost) {
       _parentEndpointId = id;
-      Nearby().stopDiscovery();
-      setState(() {
-        _isActive = false;
-        discoveredEndpoints.clear();
-      });
+      _stopDiscovery();
       return;
     }
 
@@ -642,14 +672,13 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       _sendToHost(Cmd.reportChild(userName, childName));
     }
 
-    // Check capacity locally, stop advertising if full.
+    // Check capacity locally, stop advertising if full
     final int childCount =
         _isPseudoHost ? endpointMap.length - 1 : endpointMap.length;
 
     if (childCount >= maxConnections) {
       _addLog("At capacity ($childCount/$maxConnections), stopping advertising");
-      Nearby().stopAdvertising();
-      setState(() => _isActive = false);
+      _stopAdvertising();
     }
   }
 
@@ -658,7 +687,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     if (_isDisconnectingAll) return;
 
     final disconnectedName = connectedNames[id] ?? id;
-    _addLog("Disconnected: $disconnectedName");
+    _addLog("Disconnected: ${_displayForUser(disconnectedName)}");
 
     setState(() {
       endpointMap.remove(id);
@@ -684,10 +713,19 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
       // We now have a free child slot, re-advertise if we had stopped.
       final int childCount = endpointMap.length - 1; // minus parent
-      if (childCount < maxConnections && !_isActive) {
+      if (childCount < maxConnections && !_isAdvertising) {
         _addLog("Slot freed, re-advertising '$_lobbyName'");
-        _restartAdvertising();
+        _startAdvertising();
       }
+      return;
+    }
+
+    //  Joiner: lost connection to parent, restart discovery
+    if (!amHost && id == _parentEndpointId) {
+      _addLog("Lost connection to host, restarting discovery");
+      _parentEndpointId = null;
+      _players.clear();
+      _startDiscovery();
       return;
     }
   }
@@ -706,11 +744,11 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   Widget _buildGameTab(BuildContext context) {
     String roleLabel;
     if (_isPseudoHost) {
-      roleLabel = 'Pseudo-Host';
+      roleLabel = 'Pseudo-Host $displayName';
     } else if (isHost) {
-      roleLabel = 'Host';
+      roleLabel = 'Host $displayName';
     } else {
-      roleLabel = 'Joiner';
+      roleLabel = 'Joiner $displayName';
     }
 
     return Padding(
@@ -746,34 +784,43 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Controls
-          if (!_isPseudoHost)
-            Row(children: [
-              Expanded(
-                child: FilledButton(
-                  onPressed: _isActive ||
-                          (isHost && endpointMap.length >= maxConnections)
-                      ? null
-                      : (isHost ? _startAdvertising : _startDiscovery),
-                  child:
-                      Text('Start ${amHost ? "Advertising" : "Discovery"}'),
+          // Capacity display for hosts and pseudo-hosts
+          if (amHost) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Capacity (${_isPseudoHost ? endpointMap.length - 1 : endpointMap.length}/$maxConnections)',
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _isActive
-                      ? (isHost ? _stopAdvertising : _stopDiscovery)
-                      : null,
-                  child:
-                      Text('Stop ${amHost ? "Advertising" : "Discovery"}'),
-                ),
-              ),
-            ]),
+                const SizedBox(width: 8),
+                if (_isAdvertising)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.cell_tower, size: 16,
+                          color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: 4),
+                      Text('Advertising',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontSize: 13,
+                          )),
+                    ],
+                  )
+                else
+                  Text('Not Advertising',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontSize: 13,
+                      )),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
 
           // Discovered lobbies (joiner only)
           if (!amHost && discoveredEndpoints.isNotEmpty) ...[
-            const SizedBox(height: 16),
             Text('Available Lobbies',
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
@@ -787,9 +834,10 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
                         child: const Text('Join')),
                   ),
                 )),
+            const SizedBox(height: 16),
           ],
 
-          if (!amHost && _isActive && discoveredEndpoints.isEmpty)
+          if (!amHost && _isDiscovering && discoveredEndpoints.isEmpty)
             const Padding(
               padding: EdgeInsets.only(top: 16),
               child: Center(
@@ -800,7 +848,20 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
               ])),
             ),
 
-          const SizedBox(height: 16),
+          // Start game button
+          if (isHost) ...[
+            SizedBox(
+              height: 56,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Start Game'),
+                onPressed: () {
+                  _addLog('Start game pressed');
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
 
           // Toggle between connection info and logs
           Row(
@@ -852,7 +913,9 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   List<Widget> _buildTopologyRows(String node, int depth) {
     final isPseudo = _pseudoHosts.contains(node);
     final isMe = node == userName;
-    final label = isMe ? '$node (HOST)' : (isPseudo ? '$node (pseudo)' : node);
+    // Show "nickname (userName)" in topology, with role
+    final nameLabel = _displayForUser(node);
+    final label = isMe ? '$nameLabel (HOST)' : (isPseudo ? '$nameLabel (pseudo)' : nameLabel);
 
     final widgets = <Widget>[
       Padding(
@@ -888,9 +951,10 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     return ListView(
       children: endpointMap.keys.map((id) {
         final isParent = id == _parentEndpointId;
+        final userName = connectedNames[id] ?? id;
         return ListTile(
           leading: Icon(isParent ? Icons.arrow_upward : Icons.phone_android),
-          title: Text(_display(id)),
+          title: Text(_displayForUser(userName)),
           subtitle: Text(isParent ? '$id (parent)' : id),
         );
       }).toList(),
@@ -905,12 +969,12 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     } else if (amHost) {
       title = 'Offline: Host';
     } else {
-      title = 'Offline: Joining...';
+      title = 'Offline: Joiner';
     }
 
     return LobbyLayout(
       title: title,
-      isConnected: endpointMap.isNotEmpty || (isHost && _isActive),
+      isConnected: endpointMap.isNotEmpty || (isHost && _isAdvertising),
       players: _players,
       chatMessages: _chatMessages,
       currentPlayerId: userName,

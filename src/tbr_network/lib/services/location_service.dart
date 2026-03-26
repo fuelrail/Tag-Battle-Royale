@@ -6,13 +6,13 @@ import 'game_socket_service.dart';
 ///
 /// This service keeps track of the latest position and sends it every 
 /// [sendIntervalMs] milliseconds. If the GPS has no position, nothing is 
-/// sent and the server will mark the player as "stale" after its threshold.
+/// sent and the server will mark the player as "stale" after some time.
 ///
 /// If the GPS stream errors out, the service will automatically retry.
 /// The service knows we are connected to a socket via notifySocketConnected()
 /// and notifySocketDisconnected(). We pause updates if we disconnect from socket.
 /// 
-/// Background execution is covered with the foreground service
+/// Background service is covered with the foreground service
 /// notification in AndroidSettings.
 class LocationService {
   final GameSocketService gameSocketService;

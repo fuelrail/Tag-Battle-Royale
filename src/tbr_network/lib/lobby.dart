@@ -88,7 +88,7 @@ class LobbyLayoutState extends State<LobbyLayout> {
     super.dispose();
   }
 
-  // Tab Builders
+  // --- Tab Builders ---
 
   Widget _buildMapTab() {
     return const Center(

@@ -75,7 +75,7 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
     ).then((_) => _checkForSavedSession());
   }
 
-  // Reconnect 
+  // --- Reconnects ---
 
   Future<void> _reconnect(BuildContext ctx) async {
     // Could have lost the savedSession
@@ -189,11 +189,14 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
     _location = null;
   }
 
+
   @override
   void dispose() {
     _cleanupReconnect();
     super.dispose();
   }
+
+  // --- Build ---
 
   @override
   Widget build(BuildContext context) {
@@ -320,7 +323,6 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   @override
   void initState() {
     super.initState();
-    _nameCtrl.text = 'Player-${Random().nextInt(10000)}';
   }
 
   @override
@@ -330,8 +332,14 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     super.dispose();
   }
 
-  Future<void> _checkLocationAndGo(BuildContext ctx, ConnectionRole role) async {
-    if (!await checkLocationPermission(ctx)) return;
+  // --- Lobby Push ---
+
+  Future<void> _checkPermissionsAndGo(BuildContext ctx, ConnectionRole role) async {
+    if (isOnline) {
+      if (!await checkLocationPermission(ctx)) return;
+    } else {
+      if (!await checkOfflinePermissions(ctx)) return;
+    }
     // We need to check if we are still on this screen because we could have left
     // due to the async await.
     if (!ctx.mounted) return;
@@ -345,7 +353,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
 
   void _goHost(BuildContext ctx) {
     final name = _nameCtrl.text.trim().isEmpty
-        ? 'Player-${Random().nextInt(1000)}'
+        ? 'Player'
         : _nameCtrl.text.trim();
     if (isOnline) {
       Navigator.push(
@@ -373,7 +381,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
 
   void _goJoin(BuildContext ctx) {
     final name = _nameCtrl.text.trim().isEmpty
-        ? 'Player-${Random().nextInt(1000)}'
+        ? 'Player'
         : _nameCtrl.text.trim();
     if (isOnline) {
       final code = _codeCtrl.text.trim().toUpperCase();
@@ -400,6 +408,8 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     }
   }
 
+  // --- Build ---
+
   @override
   Widget build(BuildContext context) {
     final modeLabel = isOnline ? 'Online' : 'Offline';
@@ -423,7 +433,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
             TextField(
               controller: _nameCtrl,
               decoration: const InputDecoration(
-                  labelText: 'Player Name',
+                  labelText: 'User Name',
                   border: OutlineInputBorder()),
             ),
 
@@ -433,8 +443,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                 controller: _codeCtrl,
                 decoration: const InputDecoration(
                     labelText: 'Game Code (join only)',
-                    border: OutlineInputBorder(),
-                    helperText: 'Leave empty to create a new game'),
+                    border: OutlineInputBorder()),
                 textCapitalization: TextCapitalization.characters,
                 maxLength: 6,
               ),
@@ -447,7 +456,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
               child: FilledButton.icon(
                 icon: const Icon(Icons.cell_tower),
                 label: const Text('Host'),
-                onPressed: () => _checkLocationAndGo(context, ConnectionRole.host),
+                onPressed: () => _checkPermissionsAndGo(context, ConnectionRole.host),
               ),
             ),
             const SizedBox(height: 16),
@@ -457,7 +466,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.search),
                 label: const Text('Join'),
-                onPressed: () => _checkLocationAndGo(context, ConnectionRole.join),
+                onPressed: () => _checkPermissionsAndGo(context, ConnectionRole.join),
               ),
             ),
           ]),

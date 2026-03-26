@@ -70,6 +70,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     });
   }
 
+  // --- Callbacks ---
+
   void _setupCallbacks() {
     _socket!.onConnected = () {
       // This check is technically unnecessary because we decided to remove
@@ -176,6 +178,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     }
   }
 
+  // ---
+
   void _onGameStarted() {
     // Save session for host and joiners for active game
     GameSession.save(
@@ -212,7 +216,6 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     );
   }
 
-  // Logging
   void _addLog(String message) {
     if (!mounted) return;
     setState(() {
