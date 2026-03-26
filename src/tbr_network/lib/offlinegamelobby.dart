@@ -4,27 +4,13 @@ import 'dart:collection';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:location/location.dart' as loc;
 import 'package:flutter/material.dart';
 import 'package:nearby_connections/nearby_connections.dart';
-import 'package:permission_handler/permission_handler.dart' as ph;
 
-import 'main.dart'; // for ConnectionRole
+import 'main.dart';
+import 'permissions.dart';
 
 // Commands
-// 
-// Direct (between adjacent nodes):
-//   CMD:USERNAME:<userName>
-//
-// Relayed (wrapped in RELAY when non-adjacent):
-//   CMD:BECOME_HOST:<lobbyName>
-//   CMD:REPORT_CHILD:<parentUserName>:<childUserName>
-//   CMD:REPORT_DISCONNECT:<parentUserName>:<childUserName>
-//
-// Relay wrapper:
-//   CMD:RELAY:<senderUserName>:<targetUserName>:<innerMessage>
-//   targetUserName can be "HOST" to address the host.
-
 class Cmd {
   static const String _username = 'CMD:USERNAME:';
   static const String _becomeHost = 'CMD:BECOME_HOST:';
@@ -102,11 +88,11 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   final int maxConnections = 1; // needs testing to get the right number, but 3 is probably safe
 
   // Connected Endpoints
-  Map<String, ConnectionInfo> endpointMap = {}; // endpointId -> ConnectionInfo
-  Map<String, String> connectedNames = {}; // endpointId -> userName
+  Map<String, ConnectionInfo> endpointMap = {}; // { endpointId: ConnectionInfo }
+  Map<String, String> connectedNames = {}; // { endpointId: userName }
 
   // Discovered Endpoints
-  Map<String, DiscoveredEndpoint> discoveredEndpoints = {}; // endpointId -> DiscoveredEndpoint
+  Map<String, DiscoveredEndpoint> discoveredEndpoints = {}; // { endpointId: DiscoveredEndpoint }
 
   bool _isActive = false; // advertising or discovering
   bool _isPseudoHost = false; 
@@ -121,7 +107,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   bool get amHost => isHost || _isPseudoHost;
 
   // Topology (for host)
-  final Map<String, List<String>> _tree = {}; // userName -> [userName -> [...]] 
+  final Map<String, List<String>> _tree = {}; // Tree structure
   final Set<String> _pseudoHosts = {}; // Set of userNames that are pseudoHosts already
 
   @override
@@ -140,47 +126,6 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     Nearby().stopDiscovery();
     Nearby().stopAllEndpoints();
     super.dispose();
-  }
-
-  // --- Permissions ---
-
-  Future<bool> _ensurePermissions() async {
-    try {
-      if (await loc.Location.instance.hasPermission() ==
-          loc.PermissionStatus.denied) {
-        if (await loc.Location.instance.requestPermission() !=
-            loc.PermissionStatus.granted) {
-          throw Exception("Location permission not granted");
-        }
-      }
-    } catch (e) {
-      print('Location permission check threw: $e');
-    }
-
-    try {
-      if (!await loc.Location.instance.serviceEnabled()) {
-        if (!await loc.Location.instance.requestService()) {
-          throw Exception("Location service not enabled");
-        }
-      }
-    } catch (e) {
-      _showSnackbar("Please enable location services");
-      return false;
-    }
-
-    try {
-      if (!await ph.Permission.bluetooth.request().isGranted ||
-          !await ph.Permission.bluetoothAdvertise.request().isGranted ||
-          !await ph.Permission.bluetoothConnect.request().isGranted ||
-          !await ph.Permission.bluetoothScan.request().isGranted) {
-        throw Exception("Bluetooth permissions not granted");
-      }
-    } catch (e) {
-      _showSnackbar("Please enable bluetooth permissions");
-      return false;
-    }
-
-    return true;
   }
 
   // --- Message Sending ---
@@ -452,7 +397,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   // --- Advertising ---
 
   Future<void> _startAdvertising() async {
-    if (!await _ensurePermissions()) return;
+    if (!await checkOfflinePermissions(context)) return;
     _restartAdvertising();
   }
 
@@ -481,7 +426,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   // --- Discovery ---
 
   Future<void> _startDiscovery() async {
-    if (!await _ensurePermissions()) return;
+    if (!await checkOfflinePermissions(context)) return;
     try {
       final a = await Nearby().startDiscovery(
         userName,

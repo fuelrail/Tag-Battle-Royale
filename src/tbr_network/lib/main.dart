@@ -6,7 +6,7 @@ import 'offlinegamelobby.dart';
 import 'onlinegamescreen.dart';
 import 'onlinegamelobby.dart';
 import 'storage/gamesession.dart';
-import 'location_permission.dart';
+import 'permissions.dart';
 import '/services/game_socket_service.dart';
 import '/services/location_service.dart';
 
@@ -207,7 +207,7 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
             const SizedBox(height: 8),
             Text('Choose your connection mode',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest)),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
             const SizedBox(height: 48),
 
             // Reconnect error message

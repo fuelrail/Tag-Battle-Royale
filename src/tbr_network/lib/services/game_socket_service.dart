@@ -4,6 +4,7 @@ import 'package:socket_io_client/socket_io_client.dart' as IO;
 typedef JsonCallback = void Function(Map<String, dynamic> data);
 typedef ErrorCallback = void Function(String event, String message);
 typedef LocationBroadcastCallback = void Function(Map<String, PlayerLocationInfo> players);
+typedef ChatMessageCallback = void Function(ChatMessage message);
 
 /// Player location info received from the server's broadcast.
 class PlayerLocationInfo {
@@ -62,6 +63,30 @@ class PlayerLocationInfo {
   }
 }
 
+/// Chat message received from the server.
+class ChatMessage {
+  final String playerId;
+  final String playerName;
+  final String text;
+  final int timestamp;
+
+  ChatMessage({
+    required this.playerId,
+    required this.playerName,
+    required this.text,
+    required this.timestamp,
+  });
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    return ChatMessage(
+      playerId: json['playerId'],
+      playerName: json['playerName'],
+      text: json['text'],
+      timestamp: json['timestamp'],
+    );
+  }
+}
+
 /// Manages the Socket.IO connection to the game server.
 ///
 /// Callbacks are used to notify of events. 
@@ -77,40 +102,19 @@ class GameSocketService {
   String? currentGameId;
   String? currentPlayerId;
 
-
   VoidCallback? onConnected;
-
   VoidCallback? onDisconnected;
-
-  /// data: { game: { id, status, players, ... }, playerId }
-  JsonCallback? onGameCreated;
-
-  /// data: { game: { id, status, players, ... }, playerId }
-  JsonCallback? onGameJoined;
-
-  /// data: { playerId, playerName, players: [...] }
-  JsonCallback? onPlayerJoined;
-
-  /// data: { playerId, playerName, remainingPlayers: [...] }
-  JsonCallback? onPlayerLeft;
-
-  /// data: { gameId, startedAt }
-  JsonCallback? onGameStarted;
-
-  /// Fired on any server error
-  ErrorCallback? onError;
-
-  /// data: { playerId, playerName, players }
-  JsonCallback? onPlayerReconnected;
-
-  /// data: { playerId, playerName, players }
-  JsonCallback? onPlayerDisconnected;
-
-  /// data: { game, playerId }
-  JsonCallback? onRejoined;
-
-  /// players: {playerId: PlayerLocationInfo}
-  LocationBroadcastCallback? onLocationBroadcast;
+  JsonCallback? onGameCreated;                    // { game: { id, status, players, ... }, playerId }
+  JsonCallback? onGameJoined;                     // { game: { id, status, players, ... }, playerId }
+  JsonCallback? onPlayerJoined;                   // { playerId, playerName, players: [...] }
+  JsonCallback? onPlayerLeft;                     // { playerId, playerName, remainingPlayers: [...] }
+  JsonCallback? onGameStarted;                    // { gameId, startedAt }
+  ErrorCallback? onError;                         // (event, message)
+  JsonCallback? onPlayerReconnected;              // { playerId, playerName, players }
+  JsonCallback? onPlayerDisconnected;             // { playerId, playerName, players }
+  JsonCallback? onRejoined;                       // { game, playerId }
+  LocationBroadcastCallback? onLocationBroadcast; // { playerId: PlayerLocationInfo }
+  ChatMessageCallback? onChatMessage;             // ChatMessage
 
   GameSocketService({required this.serverUrl});
 
@@ -183,6 +187,11 @@ class GameSocketService {
       onLocationBroadcast?.call(players);
     });
 
+    _socket.on('chat:message', (data) {
+      final d = Map<String, dynamic>.from(data);
+      onChatMessage?.call(ChatMessage.fromJson(d));
+    });
+
     _socket.on('error', (data) {
       final d = Map<String, dynamic>.from(data);
       onError?.call(d['event'] ?? 'unknown', d['message'] ?? 'Unknown error');
@@ -253,6 +262,12 @@ class GameSocketService {
     _socket.emit('game:leave');
     currentGameId = null;
     currentPlayerId = null;
+  }
+
+  // Chat
+  void sendChat(String text) {
+    if (!_connected) return;
+    _socket.emit('chat:send', {'text': text});
   }
 
   // Location

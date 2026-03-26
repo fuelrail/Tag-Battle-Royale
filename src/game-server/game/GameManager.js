@@ -4,8 +4,8 @@ const { Player } = require("./Player");
 
 class GameManager {
   constructor() {
-    this.games = new Map(); // gameId -> Game
-    this.socketToPlayer = new Map(); // socketId -> { playerId, gameId }
+    this.games = new Map(); // { gameId: Game }
+    this.socketToPlayer = new Map(); // { socketId: { playerId, gameId } }
   }
 
   // Games
