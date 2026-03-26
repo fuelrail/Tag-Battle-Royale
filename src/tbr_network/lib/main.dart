@@ -31,7 +31,7 @@ class MyApp extends StatelessWidget {
 }
 
 // --------------------------------------------------------------------------
-//  Screen 1: Choose Offline or Online mode
+//  Screen 1: Reconnect, Offline, Online, Map Editor
 // --------------------------------------------------------------------------
 
 class ModeSelectionScreen extends StatefulWidget {
@@ -405,7 +405,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     final modeLabel = isOnline ? 'Online' : 'Offline';
 
     return Scaffold(
-      appBar: AppBar(title: Text('$modeLabel — Host or Join')),
+      appBar: AppBar(title: Text('$modeLabel - Host or Join')),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
