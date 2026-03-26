@@ -6,7 +6,7 @@ import 'offlinegamelobby.dart';
 import 'onlinegamescreen.dart';
 import 'onlinegamelobby.dart';
 import 'storage/gamesession.dart';
-import 'location_permission.dart';
+import 'permissions.dart';
 import '/services/game_socket_service.dart';
 import '/services/location_service.dart';
 
