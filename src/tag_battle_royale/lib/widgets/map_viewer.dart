@@ -14,11 +14,13 @@ class MapViewer extends StatefulWidget {
     required this.image,
     required this.graph,
     required this.mapName,
+    this.showSelectButton = false,
   });
 
   final ui.Image image;
   final PlanarGraph graph;
   final String mapName;
+  final bool showSelectButton;
 
   @override
   State<MapViewer> createState() => _MapViewerState();
@@ -75,74 +77,95 @@ class _MapViewerState extends State<MapViewer> {
             _viewerInitialised = true;
           }
 
-          return ClipRect(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onScaleStart: (details){
-                // first input we get the inital values 
-                _gestureStartMatrix = _transformationController.value.clone();
-                _gestureStartSceneFocalPoint = _toScene(details.localFocalPoint);
-              },
-              onScaleUpdate: (details){
-                // each update we change the matrix appropriately
-                final focalNow = details.localFocalPoint;
-                final sceneFocal = _gestureStartSceneFocalPoint;
-                // scale around the focal point
-                final nextMatrix = _gestureStartMatrix.clone()
-                  ..translateByDouble(sceneFocal.dx, sceneFocal.dy, 0, 1)
-                  ..scaleByDouble(details.scale, details.scale, 1, 1)
-                  ..translateByDouble(-sceneFocal.dx, -sceneFocal.dy, 0, 1);
+          return Stack(
+            children: [
+              // Map view
+              ClipRect(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onScaleStart: (details){
+                    // first input we get the inital values 
+                    _gestureStartMatrix = _transformationController.value.clone();
+                    _gestureStartSceneFocalPoint = _toScene(details.localFocalPoint);
+                  },
+                  onScaleUpdate: (details){
+                    // each update we change the matrix appropriately
+                    final focalNow = details.localFocalPoint;
+                    final sceneFocal = _gestureStartSceneFocalPoint;
+                    // scale around the focal point
+                    final nextMatrix = _gestureStartMatrix.clone()
+                      ..translateByDouble(sceneFocal.dx, sceneFocal.dy, 0, 1)
+                      ..scaleByDouble(details.scale, details.scale, 1, 1)
+                      ..translateByDouble(-sceneFocal.dx, -sceneFocal.dy, 0, 1);
 
-                final transformedStartFocal =MatrixUtils.transformPoint(nextMatrix, sceneFocal);
-                final correction = focalNow - transformedStartFocal;
-                // shift if the focal point has changed
-                nextMatrix.translateByDouble(
-                  correction.dx,
-                  correction.dy,
-                  0,
-                  1,
-                );
+                    final transformedStartFocal = MatrixUtils.transformPoint(nextMatrix, sceneFocal);
+                    final correction = focalNow - transformedStartFocal;
+                    // shift if the focal point has changed
+                    nextMatrix.translateByDouble(
+                      correction.dx,
+                      correction.dy,
+                      0,
+                      1,
+                    );
 
-                _transformationController.value = nextMatrix;
+                    _transformationController.value = nextMatrix;
 
-              },
-              child: SizedBox(
-                width: viewportSize.width,
-                height: viewportSize.height,
-                child: Transform(
-                  transform: _transformationController.value,
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: SizedBox(
-                      width: widget.image.width.toDouble(),
-                      height: widget.image.height.toDouble(),
-                      child: Stack(
-                        children: [
-                          // draws the image
-                          CustomPaint(
-                            size: Size(widget.image.width.toDouble(), widget.image.height.toDouble()),
-                            painter: ImagePainter(widget.image),
+                  },
+                  child: SizedBox(
+                    width: viewportSize.width,
+                    height: viewportSize.height,
+                    child: Transform(
+                      transform: _transformationController.value,
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        child: SizedBox(
+                          width: widget.image.width.toDouble(),
+                          height: widget.image.height.toDouble(),
+                          child: Stack(
+                            children: [
+                              // draws the image
+                              CustomPaint(
+                                size: Size(widget.image.width.toDouble(), widget.image.height.toDouble()),
+                                painter: ImagePainter(widget.image),
+                              ),
+                              // draws the faces (Zones)
+                              CustomPaint(
+                                size: Size(widget.image.width.toDouble(), widget.image.height.toDouble()),
+                                painter: FacePainter(
+                                  faces: widget.graph.faces,
+                                  drawLabel: true,
+                                ),
+                              ),
+                              // draws the edges
+                              CustomPaint(
+                                size: Size(widget.image.width.toDouble(), widget.image.height.toDouble()),
+                                painter: EdgePainter(edges: widget.graph.edges),
+                              ),
+                            ],
                           ),
-                          // draws the faces (Zones)
-                          CustomPaint(
-                            size: Size(widget.image.width.toDouble(), widget.image.height.toDouble()),
-                            painter: FacePainter(
-                              faces: widget.graph.faces,
-                              drawLabel: true,
-                            ),
-                          ),
-                          // draws the edges
-                          CustomPaint(
-                            size: Size(widget.image.width.toDouble(), widget.image.height.toDouble()),
-                            painter: EdgePainter(edges: widget.graph.edges),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
+
+              // Select Map button (only shown when used from the lobby)
+              if (widget.showSelectButton)
+                Positioned(
+                  bottom: 24,
+                  left: 24,
+                  right: 24,
+                  child: SizedBox(
+                    height: 56,
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.check),
+                      label: const Text('Select Map'),
+                      onPressed: () => Navigator.pop(context, true),
+                    ),
+                  ),
+                ),
+            ],
           );
         },
       ),
