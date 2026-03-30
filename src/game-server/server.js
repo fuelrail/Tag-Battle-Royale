@@ -20,6 +20,7 @@ const io = new Server(server, {
   },
   pingInterval: 10000, // how often to ping clients (ms)
   pingTimeout: 5000, // how long to wait for pong before disconnect
+  maxHttpBufferSize: 6e6, // 6mb limit
 });
 
 app.use(cors());

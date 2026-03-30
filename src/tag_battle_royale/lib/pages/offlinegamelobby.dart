@@ -743,7 +743,7 @@ String _displayForUser(String userName) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(a.toString())));
   }
 
-  // Game Tab Builder
+  // Tab Builders
 
   Widget _buildGameTab(BuildContext context) {
     String roleLabel;
@@ -965,6 +965,20 @@ String _displayForUser(String userName) {
     );
   }
 
+  Widget _buildMapTab(BuildContext context) {
+    return MapSelector(
+      canCreateMaps: false,
+      selectedMapName: _selectedMap?.mapName,
+      selectedMapId: _selectedMap?.id,
+      onMapSelected: (map) {
+        setState(() => _selectedMap = map);
+        if (map != null) {
+          _addLog('Selected map: ${map.id} ${map.mapName}');
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     String title;
@@ -986,19 +1000,6 @@ String _displayForUser(String userName) {
       onSendChat: _sendChatMessage,
       gameTabBuilder: _buildGameTab,
       mapTabBuilder: isHost ? _buildMapTab : null,
-    );
-  }
-
-  Widget _buildMapTab(BuildContext context) {
-    return MapSelector(
-      canCreateMaps: false,
-      selectedMapName: _selectedMap?.mapName,
-      onMapSelected: (map) {
-        setState(() => _selectedMap = map);
-        if (map != null) {
-          _addLog('Selected map: ${map.mapName}');
-        }
-      },
     );
   }
 }

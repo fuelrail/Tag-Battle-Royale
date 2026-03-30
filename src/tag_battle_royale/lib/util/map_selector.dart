@@ -18,11 +18,13 @@ class MapSelector extends StatefulWidget {
     super.key,
     required this.onMapSelected,
     this.selectedMapName,
+    this.selectedMapId,
     this.canCreateMaps = false,
   });
 
   final void Function(MapFile? map) onMapSelected;
   final String? selectedMapName;
+  final String? selectedMapId;
   final bool canCreateMaps;
 
   @override
@@ -93,7 +95,7 @@ class _MapSelectorState extends State<MapSelector> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Currently selected map
-        if (widget.selectedMapName != null)
+        if (widget.selectedMapId != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Card(
@@ -164,7 +166,7 @@ class _MapSelectorState extends State<MapSelector> {
                 itemCount: maps.length,
                 itemBuilder: (context, index) {
                   final map = maps[index];
-                  final isSelected = map.mapName == widget.selectedMapName;
+                  final isSelected = map.id == widget.selectedMapId;
                   return ListTile(
                     leading: Icon(
                       isSelected ? Icons.check_circle : Icons.map,

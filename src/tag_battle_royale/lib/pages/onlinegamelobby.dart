@@ -46,6 +46,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   final List<String> _log = [];
 
   MapFile? _selectedMap; // host only
+  bool _isStarting = false;
+  MapFile? _receivedMap;
 
   bool get isHost => widget.role == ConnectionRole.host;
 
@@ -163,11 +165,33 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       setState(() => _chatMessages.add(message));
     };
 
+    _socket!.onMapData = (mapJson) {
+      if (!mounted) return;
+      try {
+        _receivedMap = MapFile.fromJson(mapJson);
+        _socket!.confirmMapReceived();
+        _addLog('Map received and confirmed');
+        // Save session for host and joiners for active game
+        GameSession.save(
+          gameId: _socket!.currentGameId!,
+          playerId: _socket!.currentPlayerId!,
+          playerName: widget.playerName,
+          isHost: isHost,
+          gameStarted: true,
+        );
+      } catch (e) {
+        _addLog('ERROR: Failed to deserialize map: $e');
+      }
+    };
+
     _socket!.onError = (event, message) {
       if (!mounted) return;
       _addLog('ERROR [$event]: $message');
       if (event == 'connection' || event == 'game:create' || event == 'game:join') {
         setState(() => _status = 'Error');
+      }
+      if (event == 'game:start') {
+        setState(() => _isStarting = false);
       }
     };
   }
@@ -185,14 +209,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   // ---
 
   void _onGameStarted() {
-    // Save session for host and joiners for active game
-    GameSession.save(
-      gameId: _socket!.currentGameId!,
-      playerId: _socket!.currentPlayerId!,
-      playerName: widget.playerName,
-      isHost: isHost,
-      gameStarted: true,
-    );
+    setState(() => _isStarting = false);
 
     // Start location tracking
     _location!.startTracking();
@@ -242,6 +259,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _socket?.onGameStarted = null;
     _socket?.onLocationBroadcast = null;
     _socket?.onChatMessage = null;
+    _socket?.onMapData = null;
     _socket?.onError = null;
   }
 
@@ -254,7 +272,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     super.dispose();
   }
 
-  // Game Tab Builder
+  // Tab Builders
 
   Widget _buildGameTab(BuildContext context) {
     return Padding(
@@ -317,16 +335,46 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
             ),
             const SizedBox(height: 24),
 
+            // Hint to select a map
+            if (isHost && _selectedMap == null && !_isStarting)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Select a map in the Map tab to start',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+              ),
+
             if (isHost)
-              SizedBox(
-                height: 56,
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Start Game'),
-                  onPressed: () {
-                    _socket!.startGame();
-                    _addLog('Starting game…');
-                  },
+              _isStarting
+                  ? const Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(strokeWidth: 2),
+                            SizedBox(width: 16),
+                            Text('Starting game...'),
+                          ],
+                        ),
+                      ),
+                    )
+                  : SizedBox(
+                      height: 56,
+                      child: FilledButton.icon(
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('Start Game'),
+                        // Disabled if no map is selected
+                        onPressed: _selectedMap == null
+                            ? null
+                            : () {
+                                setState(() => _isStarting = true);
+                                _socket!.startGame(_selectedMap!.toJson());
+                                _addLog('Starting game, sending map to players…');
+                              },
                 ),
               )
             else
@@ -363,6 +411,20 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     );
   }
 
+  Widget _buildMapTab(BuildContext context) {
+    return MapSelector(
+      canCreateMaps: true,
+      selectedMapName: _selectedMap?.mapName,
+      selectedMapId: _selectedMap?.id,
+      onMapSelected: (map) {
+        setState(() => _selectedMap = map);
+        if (map != null) {
+          _addLog('Selected map: ${map.mapName}');
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return LobbyLayout(
@@ -375,19 +437,6 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       onSendChat: (text) => _socket?.sendChat(text),
       gameTabBuilder: _buildGameTab,
       mapTabBuilder: isHost ? _buildMapTab : null,
-    );
-  }
-
-  Widget _buildMapTab(BuildContext context) {
-    return MapSelector(
-      canCreateMaps: true,
-      selectedMapName: _selectedMap?.mapName,
-      onMapSelected: (map) {
-        setState(() => _selectedMap = map);
-        if (map != null) {
-          _addLog('Selected map: ${map.mapName}');
-        }
-      },
     );
   }
 }

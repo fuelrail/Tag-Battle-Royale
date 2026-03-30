@@ -12,9 +12,14 @@ class Game {
     this.staleThresholdMs = config.staleThresholdMs || 12000; // no update = stale
     this._broadcastTimer = null;
     this._broadcastCallback = null; // set by GameManager when game starts
+
+    // Map transfer
+    this.mapData = null;
+    this.mapConfirmations = new Set(); // playerIds that confirmed receival
   }
 
-  // Players
+  // --- Players ---
+
   addPlayer(player) {
     if (this.getConnectedPlayerCount() >= this.maxPlayers) {
       throw new Error("Game is full");
@@ -59,6 +64,19 @@ class Game {
     return Array.from(this.players.values()).map((p) => p.toJSON());
   }
 
+  // --- Map transfer ---
+  // Check if all connected players have confirmed receiving the map.
+  // Called after each game:map:received and after a player disconnects
+  // during the starting phase.
+  allPlayersConfirmedMap() {
+    for (const [id, player] of this.players) {
+      if (player.connected && !this.mapConfirmations.has(id)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   // --- Locations for broadcasting ---
   //
   // Builds the payload that gets sent to players each tick.
@@ -78,7 +96,7 @@ class Game {
           playerId: id,
           playerName: player.name,
           status: "disconnected",
-          location: player.location,
+          location: player.location, // last known location, may be null
           disconnectedAge: now - player.disconnectedAt,
         };
         continue;
@@ -107,7 +125,7 @@ class Game {
             accuracy: player.location.accuracy,
             timestamp: player.location.timestamp,
           },
-          // Last known location age in ms, used for "last seen X seconds ago"
+          // Last known location age in ms, used for "last seen x seconds ago"
           locationAge: age,
         };
       }
@@ -116,7 +134,7 @@ class Game {
     return players;
   }
 
-  // Broadcasting
+  // --- Broadcasting ---
   startBroadcasting(callback) {
     this._broadcastCallback = callback;
 
@@ -138,7 +156,7 @@ class Game {
     this._broadcastCallback = null;
   }
 
-  // Game life
+  // --- Game life ---
   start(broadcastCallback) {
     this.status = "active";
     this.startedAt = Date.now();

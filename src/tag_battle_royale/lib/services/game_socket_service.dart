@@ -88,9 +88,6 @@ class ChatMessage {
 /// Manages the Socket.IO connection to the game server.
 ///
 /// Callbacks are used to notify of events. 
-/// 
-/// On reconnection, if [currentGameId] and [currentPlayerId] are set,
-/// the service will attempt to rejoin the game with game:rejoin.
 class GameSocketService {
   final String serverUrl;
   late IO.Socket _socket;
@@ -113,6 +110,7 @@ class GameSocketService {
   JsonCallback? onRejoined;                       // { game, playerId }
   LocationBroadcastCallback? onLocationBroadcast; // { playerId: PlayerLocationInfo }
   ChatMessageCallback? onChatMessage;             // ChatMessage
+  JsonCallback? onMapData; //
 
   GameSocketService({required this.serverUrl});
 
@@ -174,6 +172,11 @@ class GameSocketService {
 
     _socket.on('game:started', (data) {
       onGameStarted?.call(Map<String, dynamic>.from(data));
+    });
+
+    _socket.on('game:map', (data) {
+      final d = Map<String, dynamic>.from(data);
+      onMapData?.call(d);
     });
 
     _socket.on('location:broadcast', (data) {
@@ -252,8 +255,13 @@ class GameSocketService {
     });
   }
 
-  void startGame() {
-    _socket.emit('game:start');
+  void startGame(Map<String, dynamic> mapJson) {
+    _socket.emit('game:start', {'map': mapJson});
+  }
+
+  /// Confirm that we received and processed the map data.
+  void confirmMapReceived() {
+    _socket.emit('game:map:received');
   }
   
   /// Intentionally leave the game, this fully removes you from the server.
