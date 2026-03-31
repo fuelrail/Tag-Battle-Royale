@@ -3,13 +3,10 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '/pages/offlinegamelobby.dart';
-import '/pages/onlinegamescreen.dart';
 import '/pages/onlinegamelobby.dart';
 import '/util/gamesession.dart';
 import '/util/permissions.dart';
 import '/pages/map_editor.dart';
-import '/services/game_socket_service.dart';
-import '/services/location_service.dart';
 
 void main() => runApp(const MyApp());
 
@@ -43,15 +40,8 @@ class ModeSelectionScreen extends StatefulWidget {
 }
 
 class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
-  static const String serverUrl = 'https://tag-battle-royale.fly.dev/';
-  
   GameSessionData? _savedSession;
-  bool _reconnecting = false;
   String? _reconnectError;
-
-  // Socket/location for active game reconnection
-  GameSocketService? _socket;
-  LocationService? _location;
 
   @override
   void initState() {
@@ -102,99 +92,23 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
         ),
       ).then((_) => _checkForSavedSession());
     } else {
-      // Connect via the same socket
-      _startActiveReconnect();
-    }
-  }
-
-  void _startActiveReconnect() {
-    setState(() {
-      _reconnecting = true;
-      _reconnectError = null;
-    });
-
-    _socket = GameSocketService(serverUrl: serverUrl);
-    _location = LocationService(gameSocketService: _socket!);
-
-    _socket!.currentGameId = _savedSession!.gameId;
-    _socket!.currentPlayerId = _savedSession!.playerId;
-
-    _socket!.onRejoined = (data) {
-      // This callback could be fired after the user leaves the screen
-      // or during the timeout cleanup.
-      if (!mounted || !_reconnecting) return;
-
-      _location!.startTracking();
-
-      // We pass a reference to our socket and then unhook and dispose it.
-      // This way, if we dispose the game screen, it disposes its version
-      // of the socket and avoids a bug where we double dispose.
-      final socket = _socket!;
-      final location = _location!;
-      _socket!.onRejoined = null;
-      _socket!.onError = null;
-      _socket = null;
-      _location = null;
-
-      setState(() => _reconnecting = false);
-
+      // Game was active
       Navigator.push(
-        context,
+        ctx,
         MaterialPageRoute(
-          builder: (_) => OnlineGameScreen(
-            socket: socket,
-            location: location,
-            gameId: _savedSession!.gameId,
-            isHost: _savedSession!.isHost,
+          builder: (_) => OnlineConnectionScreen(
+            role: _savedSession!.isHost
+                ? ConnectionRole.host
+                : ConnectionRole.join,
+            playerName: _savedSession!.playerName,
+            gameCode: _savedSession!.gameId,
+            playerId: _savedSession!.playerId,
+            isHostOverride: _savedSession!.isHost,
           ),
         ),
       // We create a saved session if they leave for if they'd like to reconnect again
       ).then((_) => _checkForSavedSession());
-    };
-
-    _socket!.onError = (event, message) {
-      if (!mounted || !_reconnecting) return;
-      if (event == 'game:rejoin' || event == 'connection') {
-        GameSession.clear();
-        _cleanupReconnect();
-        setState(() {
-          _reconnecting = false;
-          _reconnectError = 'Could not reconnect, game may no longer exist';
-          _savedSession = null;
-        });
-      }
-    };
-
-    _socket!.connect();
-
-    // Timeout
-    Future.delayed(const Duration(seconds: 15), () {
-      if (mounted && _reconnecting) {
-        GameSession.clear();
-        _cleanupReconnect();
-        setState(() {
-          _reconnecting = false;
-          _reconnectError = 'Connection timed out';
-          _savedSession = null;
-        });
-      }
-    });
-  }
-
-  void _cleanupReconnect() {
-    _socket?.onRejoined = null;
-    _socket?.onError = null;
-    _location?.dispose();
-    _socket?.disconnect();
-    _socket = null;
-    _location = null;
-  }
-
-
-  @override
-  void dispose() {
-    _cleanupReconnect();
-    super.dispose();
+    }
   }
 
   // --- Build ---
@@ -231,23 +145,8 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
               const SizedBox(height: 16),
             ],
 
-            // Reconnecting spinner
-            if (_reconnecting) ...[
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Row(children: [
-                    CircularProgressIndicator(strokeWidth: 2),
-                    SizedBox(width: 16),
-                    Text('Reconnecting...'),
-                  ]),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
             // Reconnect button
-            if (_savedSession != null && !_reconnecting) ...[
+            if (_savedSession != null) ...[
               SizedBox(
                 width: double.infinity,
                 height: 56,
@@ -282,7 +181,7 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
               child: FilledButton.icon(
                 icon: const Icon(Icons.cloud),
                 label: const Text('Online'),
-                onPressed: _reconnecting ? null : () => _go(context, GameMode.online),
+                onPressed: () => _go(context, GameMode.online),
               ),
             ),
             const SizedBox(height: 16),
@@ -292,7 +191,7 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
               child: FilledButton.tonalIcon(
                 icon: const Icon(Icons.cloud_off),
                 label: const Text('Offline'),
-                onPressed: _reconnecting ? null : () => _go(context, GameMode.offline),
+                onPressed: () => _go(context, GameMode.offline),
               ),
             ),
             const SizedBox(height: 16),
@@ -302,7 +201,7 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.map),
                 label: const Text('Map Editor'),
-                onPressed: _reconnecting ? null : () {
+                onPressed: () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const MapEditor()),
