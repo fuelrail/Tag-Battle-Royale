@@ -21,7 +21,9 @@ class ImageEditor extends StatefulWidget {
 }
 
 class ImageEditorState extends State<ImageEditor> {
-  final List<Stroke> strokes = [];
+  final List<Stroke> strokes = [
+    
+  ];
   final List<Stroke> redoStrokes = [];
   
   bool drawMode = true;
@@ -34,7 +36,16 @@ class ImageEditorState extends State<ImageEditor> {
   Matrix4 _gestureStartMatrix = Matrix4.identity();
   Offset _gestureStartSceneFocalPoint = Offset.zero;
   bool _viewerInitialised = false;
-  
+  @override
+  void initState(){
+    super.initState();
+    int i = 0;
+    while(i < strokes.length){
+      faceDetector.addStroke(strokes[i]);
+      i++;
+    }
+    faceDetector.buildGraphAndFindFaces();
+  }
   // adds a removed stroke bad to strokes
   void _redo(){
     if(redoStrokes.isNotEmpty){

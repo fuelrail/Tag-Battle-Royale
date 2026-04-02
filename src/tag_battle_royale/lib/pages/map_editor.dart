@@ -1,7 +1,3 @@
-import 'dart:typed_data';
-import 'dart:convert';
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 
 import '../widgets/map_viewer.dart';
@@ -24,12 +20,6 @@ class _MapEditorState extends State<MapEditor> {
 
   void _reloadMaps(){
     _mapsFuture = getMaps();
-  }
-
-  Future<ui.Image> _getImage(Uint8List bytes) async{
-    final codec = await ui.instantiateImageCodec(bytes);
-    final frameInfo = await codec.getNextFrame();
-    return frameInfo.image;
   }
 
   @override
@@ -74,16 +64,13 @@ class _MapEditorState extends State<MapEditor> {
                       leading: const Icon(Icons.map),
                       title: Text(map.mapName),
                       onTap: () async {
-                        final image = await _getImage(base64Decode(map.imageBase64));
                         if(!context.mounted) return;
 
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => MapViewer(
-                              image: image,
-                              graph: map.graph,
-                              mapName: map.mapName,
+                              map: map,
                             ),
                           ),
                         );

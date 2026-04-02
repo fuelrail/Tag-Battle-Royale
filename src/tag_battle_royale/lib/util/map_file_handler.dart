@@ -8,7 +8,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import "faceDetection/face_detection_graph.dart";
 
-// For saving a laoding Map Files
+// For saving and laoding Map Files
 
 // check all json files in app documents directory
 // deletes any json files that are broken -> debug mode
@@ -59,6 +59,12 @@ class MapFile {
     required this.imageBounds,
     required this.graph,
   });
+  Future<ui.Image> getImage() async {
+    final codec = await ui.instantiateImageCodec(base64Decode(imageBase64));
+    final frameInfo = await codec.getNextFrame();
+    return frameInfo.image;
+  }
+
   // converts Map file to json
   Map<String, dynamic> toJson(){
     return {

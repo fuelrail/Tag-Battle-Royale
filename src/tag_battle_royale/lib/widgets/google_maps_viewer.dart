@@ -20,6 +20,7 @@ class GoogleMapsState extends State<GoogleMaps> {
   CameraPosition? _userPosition;
   String? _error;
   LatLngBounds? _imageBounds;
+  bool _showUserLocation = true;
 
   final Completer<GoogleMapController> _controller = Completer<GoogleMapController>();
   // initial camera position is the spire
@@ -57,19 +58,37 @@ class GoogleMapsState extends State<GoogleMaps> {
 
   // convert the currently displayed map into an image
   Future<ui.Image> _captureMap() async {
-    if(!_controller.isCompleted){
+    if (!_controller.isCompleted) {
       throw StateError('Map controller not ready');
     }
 
+    // hide user dot
+    setState(() {
+      _showUserLocation = false;
+    });
+
+    // wait for map to repaint
+    await Future.delayed(const Duration(milliseconds: 300));
+
     final controller = await _controller.future;
     final bytes = await controller.takeSnapshot();
-    if(bytes == null){
+
+    // show it again
+    if (mounted) {
+      setState(() {
+        _showUserLocation = true;
+      });
+    }
+
+    if (bytes == null) {
       throw StateError('Failed to capture snapshot');
     }
+
     final bounds = await controller.getVisibleRegion();
-    setState((){
+    setState(() {
       _imageBounds = bounds;
     });
+
     return await _getImage(bytes);
   }
   // get the image and move to the editImage Page
@@ -113,7 +132,7 @@ class GoogleMapsState extends State<GoogleMaps> {
           GoogleMap(
             mapType: MapType.hybrid,
             initialCameraPosition: _userPosition ?? _dublinSpire,
-            myLocationEnabled: true,
+            myLocationEnabled: _showUserLocation,
             myLocationButtonEnabled: true,
             onCameraMove: (pos){setState(() => _userPosition = pos);},
             onMapCreated: (GoogleMapController controller){
