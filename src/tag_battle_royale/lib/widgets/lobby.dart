@@ -2,6 +2,31 @@ import 'package:flutter/material.dart';
 
 import '/services/game_socket_service.dart';
 
+// --- Player data ---
+
+class PlayerData {
+  final String id;
+  final String name;
+  String role; // runner or chaser
+  bool isHost;
+
+  PlayerData({
+    required this.id,
+    required this.name,
+    this.role = 'runner',
+    this.isHost = false,
+  });
+
+  // Host = purple, Chaser = red, Runner = black.
+  Color get nameColour {
+    if (isHost) return Colors.purple;
+    if (role == 'chaser') return Colors.red;
+    return Colors.black;
+  }
+}
+
+// --- Colour palette ---
+
 const List<Color> _playerColours = [
   Colors.red,
   Colors.blue,
@@ -32,7 +57,7 @@ class LobbyLayout extends StatefulWidget {
 
   final String title;
   final bool isConnected;
-  final List<Map<String, String>> players;
+  final List<PlayerData> players;
   final List<ChatMessage> chatMessages;
   final String? currentPlayerId;
   final Map<String, Color> playerColourMap; // { playerId: Color }
@@ -120,7 +145,7 @@ class LobbyLayoutState extends State<LobbyLayout> {
                   itemCount: widget.players.length,
                   itemBuilder: (_, i) {
                     final player = widget.players[i];
-                    final colour = _getPlayerColour(player['id']!);
+                    final colour = _getPlayerColour(player.id);
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: Container(
@@ -145,7 +170,10 @@ class LobbyLayoutState extends State<LobbyLayout> {
                             ),
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 12),
-                              child: Text(player['name']!),
+                              child: Text(
+                                player.name,
+                                style: TextStyle(color: player.nameColour),
+                              ),
                             ),
                           ],
                         ),

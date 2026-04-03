@@ -99,8 +99,8 @@ class GameSocketService {
 
   VoidCallback? onConnected;
   VoidCallback? onDisconnected;
-  JsonCallback? onGameCreated;                    // { game: { id, status, players, ... }, playerId }
-  JsonCallback? onGameJoined;                     // { game: { id, status, players, ... }, playerId }
+  JsonCallback? onGameCreated;                    // { game: { id, status, hostId, players, ... }, playerId }
+  JsonCallback? onGameJoined;                     // { game: { id, status, hostId, players, ... }, playerId }
   JsonCallback? onPlayerJoined;                   // { playerId, playerName, players: [...] }
   JsonCallback? onPlayerLeft;                     // { playerId, playerName, remainingPlayers: [...] }
   JsonCallback? onGameStarted;                    // { gameId, startedAt }
@@ -108,9 +108,11 @@ class GameSocketService {
   JsonCallback? onPlayerReconnected;              // { playerId, playerName, players }
   JsonCallback? onPlayerDisconnected;             // { playerId, playerName, players }
   JsonCallback? onRejoined;                       // { game, playerId }
+  JsonCallback? onMapData;                        // map json
+  JsonCallback? onPlayerRoleUpdated;              // { playerId, role }
   LocationBroadcastCallback? onLocationBroadcast; // { playerId: PlayerLocationInfo }
   ChatMessageCallback? onChatMessage;             // ChatMessage
-  JsonCallback? onMapData; //
+
 
   GameSocketService({required this.serverUrl});
 
@@ -179,6 +181,11 @@ class GameSocketService {
       onMapData?.call(d);
     });
 
+    _socket.on('player:role:updated', (data) {
+      final d = Map<String, dynamic>.from(data);
+      onPlayerRoleUpdated?.call(d);
+    });
+
     _socket.on('location:broadcast', (data) {
       final playersRaw = Map<String, dynamic>.from(data);
 
@@ -212,7 +219,7 @@ class GameSocketService {
         print('[GameSocketService] Rejoin successful');
         onRejoined?.call(d);
       } else {
-        // Rejoin failed — game or player no longer exists
+        // Rejoin failed, game or player no longer exists
         print('[GameSocketService] Rejoin failed: ${d['error']}');
         currentGameId = null;
         currentPlayerId = null;
@@ -269,6 +276,18 @@ class GameSocketService {
     _socket.emit('game:leave');
     currentGameId = null;
     currentPlayerId = null;
+  }
+
+  void switchPlayerRole(String playerId, String role) {
+    _socket.emitWithAck('player:role', {
+      'playerId': playerId,
+      'role': role,
+    }, ack: (response) {
+      final d = Map<String, dynamic>.from(response);
+      if (d['ok'] != true) {
+        onError?.call('player:role', d['error'] ?? 'Unknown error');
+      }
+    });
   }
 
   void sendChat(String text) {

@@ -1,6 +1,7 @@
 class Game {
   constructor(id, config = {}) {
     this.id = id;
+    this.hostId = null;
     this.players = new Map(); // { playerId: Player }
     this.status = "waiting"; // waiting or active or finished
     this.createdAt = Date.now();
@@ -38,7 +39,6 @@ class Game {
     return this.players.get(playerId);
   }
 
-  /// Find a player by name — used for reconnection
   getPlayerByName(name) {
     for (const player of this.players.values()) {
       if (player.name === name) return player;
@@ -46,12 +46,10 @@ class Game {
     return null;
   }
 
-  /// Total players including disconnected
   getPlayerCount() {
     return this.players.size;
   }
 
-  /// Only connected players
   getConnectedPlayerCount() {
     let count = 0;
     for (const player of this.players.values()) {
@@ -172,6 +170,7 @@ class Game {
   toJSON() {
     return {
       id: this.id,
+      hostId: this.hostId,
       status: this.status,
       playerCount: this.getConnectedPlayerCount(),
       maxPlayers: this.maxPlayers,

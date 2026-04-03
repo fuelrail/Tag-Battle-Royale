@@ -990,10 +990,12 @@ String _displayForUser(String userName) {
       title = 'Offline: Joiner';
     }
 
+    List<PlayerData> testing = [];
+
     return LobbyLayout(
       title: title,
       isConnected: endpointMap.isNotEmpty || (isHost && _isAdvertising),
-      players: _players,
+      players: testing,
       chatMessages: _chatMessages,
       currentPlayerId: userName,
       playerColourMap: _playerColourMap,

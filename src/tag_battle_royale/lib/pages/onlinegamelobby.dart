@@ -44,9 +44,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
   String _status = 'Disconnected';
   String? _gameId;
+  String? _hostId; // player ID of the game host
 
-  final List<Map<String, String>> _players = []; // [{ id: name }]
+  final List<PlayerData> _players = [];
   final Map<String, Color> _playerColourMap = {}; // { playerId: Colour }
+  final ScrollController _playersScrollController = ScrollController();
   final List<ChatMessage> _chatMessages = [];
   final List<String> _log = [];
 
@@ -139,6 +141,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       if (!mounted) return;
       setState(() {
         _gameId = data['game']['id'];
+        _hostId = data['game']['hostId']?.toString();
         _updatePlayerList(data['game']['players']);
       });
       _addLog('Game created: $_gameId (you are ${data['playerId']})');
@@ -149,6 +152,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       if (!mounted) return;
       setState(() {
         _gameId = data['game']['id'];
+        _hostId = data['game']['hostId']?.toString();
         _updatePlayerList(data['game']['players']);
       });
       _addLog('Joined game: $_gameId');
@@ -166,6 +170,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       if (!mounted) return;
       setState(() {
         _gameId = data['game']?['id'] ?? _gameId;
+        _hostId = data['game']?['hostId']?.toString() ?? _hostId;
         _gameStarted = true;
         if (data['game']?['players'] != null) {
           _updatePlayerList(data['game']['players']);
@@ -255,6 +260,19 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       });
     };
 
+    _socket!.onPlayerRoleUpdated = (data) {
+      if (!mounted) return;
+      final playerId = data['playerId']?.toString();
+      final role = data['role']?.toString();
+      
+      if (playerId == null || role == null) return;
+      setState(() {
+        final player = _players.where((p) => p.id == playerId).firstOrNull;
+        if (player != null) player.role = role;
+      });
+      _addLog('${_players.where((p) => p.id == playerId).firstOrNull?.name ?? playerId} is now $role');
+    };
+
     _socket!.onError = (event, message) {
       if (!mounted) return;
       _addLog('ERROR [$event]: $message');
@@ -276,13 +294,74 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   }
 
   void _updatePlayerList(List players) {
+    // Preserve existing roles across updates
+    final existingRoles = {for (final p in _players) p.id: p.role};
+
     _players.clear();
     for (final player in players) {
-      _players.add({
-        'id': player['id']?.toString() ?? '',
-        'name': player['name']?.toString() ?? 'Unknown',
-      });
+      final id = player['id']?.toString() ?? '';
+      final name = player['name']?.toString() ?? 'Unknown';
+      // Use server role if present, then preserved role, then default
+      final role = player['role']?.toString()
+          ?? existingRoles[id]
+          ?? 'runner';
+      _players.add(PlayerData(
+        id: id,
+        name: name,
+        role: role,
+        isHost: id == _hostId,
+      ));
     }
+  }
+
+  // --- Role switching ---
+
+  void _switchRole(String playerId) {
+    if (_gameStarted) {
+      _confirmRoleSwitch(playerId);
+    } else {
+      _doRoleSwitch(playerId);
+    }
+  }
+
+  Future<void> _confirmRoleSwitch(String playerId) async {
+    final player = _players.where((p) => p.id == playerId).firstOrNull;
+    if (player == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Switch role?'),
+        content: Text(
+          'The game is in progress. Are you sure you want to switch '
+          '${player.name} to ${player.role == 'runner' ? 'chaser' : 'runner'}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Switch'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      _doRoleSwitch(playerId);
+    }
+  }
+
+  void _doRoleSwitch(String playerId) {
+    final player = _players.where((p) => p.id == playerId).firstOrNull;
+    if (player == null) return;
+    final newRole = player.role == 'runner' ? 'chaser' : 'runner';
+
+    setState(() => player.role = newRole);
+
+    _socket?.switchPlayerRole(playerId, newRole);
   }
 
   // ---
@@ -358,6 +437,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _socket?.onLocationBroadcast = null;
     _socket?.onChatMessage = null;
     _socket?.onMapData = null;
+    _socket?.onPlayerRoleUpdated = null;
     _socket?.onError = null;
   }
 
@@ -372,59 +452,190 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     }
     _location?.dispose();
     _socket?.disconnect();
+    _playersScrollController.dispose();
     super.dispose();
   }
 
-  // --- Tab Builders ---
+  // --- Sub Tab Builders for Game Tab ---
 
-  Widget _buildGameTab(BuildContext context) {
-    // Active game view
-    if (_gameStarted) {
-      return Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Player locations
-            if (_playerLocations.isNotEmpty) ...[
-              Text('Players:', style: Theme.of(context).textTheme.titleMedium),
-              ..._playerLocations.entries.map((e) {
-                final p = e.value;
-                final locText = p.isDisconnected
-                    ? 'Disconnected ${(p.disconnectedAge! / 1000).round()}s ago'
-                    : p.isStale
-                        ? 'Last seen ${(p.locationAge! / 1000).round()}s ago'
-                        : p.isUnknown
-                            ? 'No location'
-                            : '(${p.lat?.toStringAsFixed(5)}, ${p.lng?.toStringAsFixed(5)})';
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Text(
-                    '${p.playerName}: $locText',
-                    style: const TextStyle(fontFamily: 'monospace'),
-                  ),
-                );
-              }),
-              const SizedBox(height: 16),
-            ],
+  Widget _buildRulesSubTab() {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.rule, size: 48, color: Colors.grey),
+          SizedBox(height: 12),
+          Text('Rules coming soon', style: TextStyle(color: Colors.grey)),
+        ],
+      ),
+    );
+  }
 
-            // Log
-            Text('Log:', style: Theme.of(context).textTheme.titleMedium),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _log.length,
-                itemBuilder: (_, i) => Text(
-                  _log[i],
-                  style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                ),
-              ),
-            ),
-          ],
-        ),
+  Widget _buildPlayersSubTab() {
+    if (_players.isEmpty) {
+      return const Center(
+        child: Text('No players yet', style: TextStyle(color: Colors.grey)),
       );
     }
 
-    // Lobby view
+    return Scrollbar(
+      thumbVisibility: true,
+      controller: _playersScrollController,
+      child: ListView.builder(
+        controller: _playersScrollController,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        itemCount: _players.length,
+        itemBuilder: (context, i) {
+          final player = _players[i];
+          final colour = _playerColourMap.putIfAbsent(
+            player.id,
+            () => _kPlayerColours[_playerColourMap.length % _kPlayerColours.length],
+          );
+          final shortId = player.id.length > 8
+              ? player.id.substring(0, 8)
+              : player.id;
+
+          return Card(
+            margin: const EdgeInsets.only(bottom: 6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  // Colour bar
+                  Container(
+                    width: 4,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: colour,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(12),
+                        bottomLeft: Radius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Player name + ID
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: player.name,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              color: player.nameColour,
+                            ),
+                          ),
+                          TextSpan(
+                            text: ' ($shortId)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  // Role label
+                  Text(
+                    player.isHost
+                        ? 'Host'
+                        : player.role == 'chaser'
+                            ? 'Chaser'
+                            : 'Runner',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  // Switch button (host user only, not on the host player card)
+                  if (isHost && !player.isHost) ...[
+                    const SizedBox(width: 4),
+                    TextButton(
+                      onPressed: () => _switchRole(player.id),
+                      style: TextButton.styleFrom(
+                        minimumSize: Size.zero,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text(
+                        'Switch',
+                        style: TextStyle(color: Colors.blue, fontSize: 13),
+                      ),
+                    ),
+                  ] else
+                    const SizedBox(width: 16),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLogsSubTab() {
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: _log.length,
+      itemBuilder: (_, i) => Text(
+        _log[i],
+        style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+      ),
+    );
+  }
+
+  // --- Game Tab Builder ---
+
+  Widget _buildGameTab(BuildContext context) {
+    // If not connected, don't display game tab
+    if (!_gameStarted &&
+        (_status == 'Disconnected' ||
+            _status == 'Reconnecting...' ||
+            _status == 'Error' ||
+            _gameId == null)) {
+      return _buildLoadingView(context);
+    }
+
+    return Column(
+      children: [
+        // Top section
+        _buildTopSection(context),
+        // Sub-tabs
+        Expanded(
+          child: DefaultTabController(
+            length: 3,
+            initialIndex: 1, // Start on Players
+            child: Column(
+              children: [
+                const TabBar(
+                  tabs: [
+                    Tab(text: 'Rules'),
+                    Tab(text: 'Players'),
+                    Tab(text: 'Logs'),
+                  ],
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _buildRulesSubTab(),
+                      _buildPlayersSubTab(),
+                      _buildLogsSubTab(),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLoadingView(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -457,105 +668,116 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                   Text('Setting up game…'),
                 ],
               ),
-            )
-          else ...[
-            // Game code display
-            Center(
-              child: Column(
+            ),
+          const Spacer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopSection(BuildContext context) {
+    if (_gameStarted) {
+      // Active game top section
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Column(
+          children: [
+            Text(
+              'Game in progress',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: Colors.green,
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${_players.length} player${_players.length == 1 ? '' : 's'}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Lobby top section
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        children: [
+          // Game code
+          Text('Game Code',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 4),
+          Text(
+            _gameId!,
+            style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 4,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${_players.length} player${_players.length == 1 ? '' : 's'} connected',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 16),
+
+          // Select a map
+          if (isHost && _selectedMap == null && !_isStarting)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Select a map in the Map tab to start',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ),
+
+          // Start / waiting
+          if (isHost)
+            _isStarting
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(strokeWidth: 2),
+                        SizedBox(width: 12),
+                        Text('Starting game...'),
+                      ],
+                    ),
+                  )
+                : SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Start Game'),
+                      onPressed: _selectedMap == null
+                          ? null
+                          : () {
+                              setState(() => _isStarting = true);
+                              _socket!.startGame(_selectedMap!.toJson());
+                              _addLog('Starting game, sending map to players…');
+                            },
+                    ),
+                  )
+          else
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Game Code',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                  const SizedBox(height: 4),
-                  Text(
-                    _gameId!,
-                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 4,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${_players.length} player${_players.length == 1 ? '' : 's'} connected',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
+                  CircularProgressIndicator(strokeWidth: 2),
+                  SizedBox(width: 12),
+                  Text('Waiting for host to start…'),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
-
-            // Select a map
-            if (isHost && _selectedMap == null && !_isStarting)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'Select a map in the Map tab to start',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
-                ),
-              ),
-
-            if (isHost)
-              _isStarting
-                  ? const Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircularProgressIndicator(strokeWidth: 2),
-                            SizedBox(width: 16),
-                            Text('Starting game...'),
-                          ],
-                        ),
-                      ),
-                    )
-                  : SizedBox(
-                      height: 56,
-                      child: FilledButton.icon(
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text('Start Game'),
-                        // Disabled if no map is selected
-                        onPressed: _selectedMap == null
-                            ? null
-                            : () {
-                                setState(() => _isStarting = true);
-                                _socket!.startGame(_selectedMap!.toJson());
-                                _addLog('Starting game, sending map to players…');
-                              },
-                ),
-              )
-            else
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(strokeWidth: 2),
-                      SizedBox(width: 16),
-                      Text('Waiting for host to start the game…'),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-
-          const SizedBox(height: 16),
-
-          // Log
-          Text('Log:', style: Theme.of(context).textTheme.titleMedium),
-          Expanded(
-            child: ListView.builder(
-              itemCount: _log.length,
-              itemBuilder: (_, i) => Text(
-                _log[i],
-                style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -577,6 +799,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       );
     }
 
+    // Active Game
     return Center(
       child: _receivedMap != null
           ? Text('Map: ${_receivedMap!.mapName}')
@@ -614,3 +837,18 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     );
   }
 }
+
+// Colour palette duplicated here for the game tab's player list.
+// The lobby has its own copy for the Players tab.
+const List<Color> _kPlayerColours = [
+  Colors.red,
+  Colors.blue,
+  Colors.green,
+  Colors.orange,
+  Colors.purple,
+  Colors.teal,
+  Colors.pink,
+  Colors.indigo,
+  Colors.amber,
+  Colors.cyan,
+];

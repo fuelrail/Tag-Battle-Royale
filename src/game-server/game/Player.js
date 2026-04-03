@@ -4,6 +4,7 @@ class Player {
     this.name = name;
     this.socketId = socketId;
     this.gameId = gameId;
+    this.role = "runner";
     this.location = null;
     this.lastUpdateAt = 0; // last location update time
     this.connectedAt = Date.now();
@@ -41,6 +42,7 @@ class Player {
     return {
       id: this.id,
       name: this.name,
+      role: this.role,
       connected: this.connected,
       location: this.location,
       connectedAt: this.connectedAt,

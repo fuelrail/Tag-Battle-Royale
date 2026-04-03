@@ -7,6 +7,7 @@
 //   game:leave          (no payload)
 //   game:start          { map }
 //   game:map:received   (no payload)
+//   player:role         { playerId, role }
 //
 // Events given to client via callback:
 //   game:create   { ok, game, playerId }
@@ -14,16 +15,18 @@
 //   game:rejoin   { ok, game, playerId }
 //   game:leave    { ok }
 //   game:start    { ok }
+//   player:role   { ok }
 //
 // Events emitted to players:
-//   player:joined        { playerId, playerName, players }
-//   player:left          { playerId, playerName, remainingPlayers }
-//   player:reconnected   { playerId, playerName, players }
-//   player:disconnected  { playerId, playerName, players }
-//   game:map             { mapData }
-//   game:started         { gameId, startedAt }
-//   location:broadcast   { [playerId]: { status, location, ... } }
-//   error                { event, message }
+//   player:joined          { playerId, playerName, players }
+//   player:left            { playerId, playerName, remainingPlayers }
+//   player:reconnected     { playerId, playerName, players }
+//   player:disconnected    { playerId, playerName, players }
+//   player:role:updated    { playerId, role }
+//   game:map               { mapData }
+//   game:started           { gameId, startedAt }
+//   location:broadcast     { [playerId]: { status, location, ... } }
+//   error                  { event, message }
 //
 
 function registerGameHandlers(io, socket, gameManager) {
@@ -42,7 +45,11 @@ function registerGameHandlers(io, socket, gameManager) {
 
       // Add the creator as the first player
       const player = gameManager.addPlayerToGame(game.id, playerName.trim(), socket.id);
-      console.log(`[game:create] Player "${player.name}" (${player.id}) added to game ${game.id} (${game.getConnectedPlayerCount()} connected)`);
+
+      // Host is always a chaser
+      player.role = "chaser";
+      game.hostId = player.id;
+      console.log(`[game:create] Player "${player.name}" (${player.id}) added as host/chaser to game ${game.id} (${game.getConnectedPlayerCount()} connected)`);
 
       // Join the Socket.IO room
       socket.join(game.id);
@@ -72,8 +79,8 @@ function registerGameHandlers(io, socket, gameManager) {
         return emitError(socket, callback, "game:join", `Game "${normalizedId}" not found`);
       }
 
-      // Don't allow fresh joins to active games, they must use game:rejoin
-      if (game.status === "active") {
+      // Don't allow fresh joins to active or starting games
+      if (game.status !== "waiting") {
         return emitError(socket, callback, "game:join", `Game "${normalizedId}" has already started`);
       }
 
@@ -139,7 +146,7 @@ function registerGameHandlers(io, socket, gameManager) {
       }
 
       // Restart broadcasting if it was stopped due to all players disconnecting
-      if (game.status === "active" && !game._broadcasting) {
+      if (game.status === "active" && !game._broadcastTimer) {
         game.startBroadcasting((gId, payload) => {
           const playerCount = Object.keys(payload).length;
           const activeCount = Object.values(payload).filter(p => p.status === "active").length;
@@ -149,6 +156,15 @@ function registerGameHandlers(io, socket, gameManager) {
           io.to(gId).emit("location:broadcast", payload);
         });
         console.log(`[game:rejoin] Restarted broadcast for game ${game.id}`);
+      }
+
+      // Re-check map confirmations if we're in starting phase
+      if (game.status === "starting") {
+        game.mapConfirmations.add(player.id);
+        console.log(`[game:rejoin] Auto-confirmed map for reconnecting player "${player.name}" (${game.mapConfirmations.size}/${game.getConnectedPlayerCount()})`);
+        if (game.allPlayersConfirmedMap()) {
+          _finishStarting(io, game, gameManager);
+        }
       }
 
       // Notify everyone else
@@ -248,6 +264,50 @@ function registerGameHandlers(io, socket, gameManager) {
     if (game.allPlayersConfirmedMap()) {
       _finishStarting(io, game, gameManager);
     }
+  });
+
+  // Roles
+  socket.on("player:role", (data, callback) => {
+    const playerInfo = gameManager.getPlayerBySocketId(socket.id);
+    if (!playerInfo) {
+      return emitError(socket, callback, "player:role", "Not in a game");
+    }
+
+    const game = gameManager.getGame(playerInfo.gameId);
+    if (!game) {
+      return emitError(socket, callback, "player:role", "Game not found");
+    }
+
+    // Only host can switch roles
+    if (playerInfo.id !== game.hostId) {
+      return emitError(socket, callback, "player:role", "Only the host can switch roles");
+    }
+
+    const { playerId, role } = data;
+    if (!playerId || !["runner", "chaser"].includes(role)) {
+      return emitError(socket, callback, "player:role", "Invalid playerId or role");
+    }
+
+    // Can't change host's role
+    if (playerId === game.hostId) {
+      return emitError(socket, callback, "player:role", "Cannot change the host's role");
+    }
+
+    const targetPlayer = game.getPlayer(playerId);
+    if (!targetPlayer) {
+      return emitError(socket, callback, "player:role", "Player not found");
+    }
+
+    targetPlayer.role = role;
+    console.log(`[player:role] ${targetPlayer.name} (${targetPlayer.id}) role changed to ${role} in game ${game.id}`);
+
+    if (callback) callback({ ok: true });
+
+    // Broadcast to all players in the game
+    io.to(game.id).emit("player:role:updated", {
+      playerId: targetPlayer.id,
+      role: role,
+    });
   });
 
   // Re-check map confirmations if a player disconnects during starting phase
