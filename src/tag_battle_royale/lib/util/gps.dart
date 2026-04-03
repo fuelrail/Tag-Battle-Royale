@@ -28,6 +28,9 @@ Future<Position> _determinePosition() async {
     return Future.error(
       'Location permissions are permanently denied, we cannot request permissions.');
   } 
+  final LocationSettings locationSettings = LocationSettings(
+    accuracy: LocationAccuracy.high,
+  );
   // continue accessing the position of the device.
-  return await Geolocator.getCurrentPosition();
+  return await Geolocator.getCurrentPosition(locationSettings: locationSettings);
 }

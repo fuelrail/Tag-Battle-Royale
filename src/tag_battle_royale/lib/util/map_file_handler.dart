@@ -8,12 +8,12 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import "faceDetection/face_detection_graph.dart";
 
-// For saving a laoding Map Files
+// For saving and laoding Map Files
 
 // check all json files in app documents directory
 // deletes any json files that are broken -> debug mode
 Future<List<MapFile>> getMaps() async {
-  final dir = await getApplicationDocumentsDirectory();
+  final dir = await getMapsDirectory();
   final files = dir
       .listSync()
       .whereType<File>()
@@ -43,6 +43,17 @@ Future<List<MapFile>> getMaps() async {
   return maps;
 }
 
+Future<Directory> getMapsDirectory() async {
+  final rootDir = await getApplicationDocumentsDirectory();
+  final mapsDir = Directory('${rootDir.path}/maps');
+
+  if(!await mapsDir.exists()){
+    await mapsDir.create(recursive: true);
+  }
+
+  return mapsDir;
+}
+
 class MapFile {
   final String id;
   final String fileName;
@@ -59,6 +70,12 @@ class MapFile {
     required this.imageBounds,
     required this.graph,
   });
+  Future<ui.Image> getImage() async {
+    final codec = await ui.instantiateImageCodec(base64Decode(imageBase64));
+    final frameInfo = await codec.getNextFrame();
+    return frameInfo.image;
+  }
+
   // converts Map file to json
   Map<String, dynamic> toJson(){
     return {
@@ -142,13 +159,13 @@ class MapFile {
   }
 
   Future<File> saveMapFile() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getMapsDirectory();
     final file = File('${dir.path}/$fileName');
     return file.writeAsString(makeFile());
   }
 
   Future<void> delete() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getMapsDirectory();
     final file = File('${dir.path}/$fileName');
 
     if(await file.exists()){

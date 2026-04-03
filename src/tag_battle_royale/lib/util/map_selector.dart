@@ -1,7 +1,3 @@
-import 'dart:convert';
-import 'dart:typed_data';
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 
 import '../util/map_file_handler.dart';
@@ -44,24 +40,13 @@ class _MapSelectorState extends State<MapSelector> {
     _mapsFuture = getMaps();
   }
 
-  Future<ui.Image> _bytesToImage(Uint8List bytes) async {
-    final codec = await ui.instantiateImageCodec(bytes);
-    final frameInfo = await codec.getNextFrame();
-    return frameInfo.image;
-  }
-
   /// Open the map viewer with a "Select Map" button.
   Future<void> _viewAndSelect(MapFile map) async {
-    final image = await _bytesToImage(base64Decode(map.imageBase64));
-    if (!mounted) return;
-
     final selected = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => MapViewer(
-          image: image,
-          graph: map.graph,
-          mapName: map.mapName,
+          map: map,
           showSelectButton: true,
         ),
       ),

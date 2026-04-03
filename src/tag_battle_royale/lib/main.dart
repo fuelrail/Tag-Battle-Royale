@@ -7,6 +7,7 @@ import '/pages/onlinegamelobby.dart';
 import '/util/gamesession.dart';
 import '/util/permissions.dart';
 import '/pages/map_editor.dart';
+import '/pages/replay_page.dart';
 
 void main() => runApp(const MyApp());
 
@@ -205,6 +206,21 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const MapEditor()),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.map),
+                label: const Text('Game Replays'),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ReplayPage()),
                   );
                 },
               ),
