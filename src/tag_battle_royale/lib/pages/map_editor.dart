@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../widgets/map_viewer.dart';
 import '../util/map_file_handler.dart';
+import '../widgets/google_maps_viewer.dart';
 
 class MapEditor extends StatefulWidget {
   const MapEditor({super.key});
@@ -34,7 +35,10 @@ class _MapEditorState extends State<MapEditor> {
             leading: const Icon(Icons.add),
             title: const Text("Add New Map"),
             onTap: () async {
-              final shouldReload = await Navigator.pushNamed(context, "/Create_Map");
+              final shouldReload = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const GoogleMaps()),
+              );
               if(shouldReload == true){
                 setState((){
                   _reloadMaps();
@@ -71,6 +75,7 @@ class _MapEditorState extends State<MapEditor> {
                           MaterialPageRoute(
                             builder: (_) => MapViewer(
                               map: map,
+                              playing: true,
                             ),
                           ),
                         );

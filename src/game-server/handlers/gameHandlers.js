@@ -1,11 +1,12 @@
 // --- Handles game events ---
 //
 // Events received from the client:
-//   game:create   { playerName, config }
-//   game:join     { gameId, playerName }
-//   game:rejoin   { gameId, playerId }
-//   game:leave    (no payload)
-//   game:start    (no payload)
+//   game:create         { playerName, config }
+//   game:join           { gameId, playerName }
+//   game:rejoin         { gameId, playerId }
+//   game:leave          (no payload)
+//   game:start          { map }
+//   game:map:received   (no payload)
 //
 // Events given to client via callback:
 //   game:create   { ok, game, playerId }
@@ -19,6 +20,7 @@
 //   player:left          { playerId, playerName, remainingPlayers }
 //   player:reconnected   { playerId, playerName, players }
 //   player:disconnected  { playerId, playerName, players }
+//   game:map             { mapData }
 //   game:started         { gameId, startedAt }
 //   location:broadcast   { [playerId]: { status, location, ... } }
 //   error                { event, message }
@@ -126,11 +128,15 @@ function registerGameHandlers(io, socket, gameManager) {
 
       // Rejoin the Socket.IO room
       socket.join(normalizedId);
-
       console.log(`[game:rejoin] Player "${player.name}" (${player.id}) reconnected to game ${normalizedId} (${game.getConnectedPlayerCount()} connected)`);
 
       // Tell the reconnected player they're back
       callback({ ok: true, game: game.toJSON(), playerId: player.id });
+
+      if (game.mapData) {
+        socket.emit("game:map", game.mapData);
+        console.log(`[game:rejoin] Sent map data to reconnecting player "${player.name} (${player.id})"`);
+      }
 
       // Restart broadcasting if it was stopped due to all players disconnecting
       if (game.status === "active" && !game._broadcasting) {
@@ -195,7 +201,11 @@ function registerGameHandlers(io, socket, gameManager) {
 
 
   // Start the game
-  socket.on("game:start", (_, callback) => {
+  // 1. Host sends game:start with map data
+  // 2. Server stores map and broadcasts game:map to all players
+  // 3. Each player confirms with game:map:received
+  // 4. Once all connected players confirmed, game actually starts
+  socket.on("game:start", (data, callback) => {
     const playerInfo = gameManager.getPlayerBySocketId(socket.id);
     if (!playerInfo) {
       return emitError(socket, callback, "game:start", "Not in a game");
@@ -206,7 +216,63 @@ function registerGameHandlers(io, socket, gameManager) {
       return emitError(socket, callback, "game:start", "Game not found");
     }
 
+    const mapData = data?.map;
+    if (!mapData) {
+      return emitError(socket, callback, "game:start", "Map data is required");
+    }
+
     console.log(`[game:start] Game ${game.id} starting with ${game.getConnectedPlayerCount()} connected players (triggered by socket ${socket.id})`);
+
+    // Store map and enter starting phase
+    game.mapData = mapData;
+    game.mapConfirmations = new Set();
+    game.status = "starting";
+
+    // Broadcast map to all players in the room
+    io.to(game.id).emit("game:map", mapData);
+    console.log(`[game:start] Map sent to all players in game ${game.id}, waiting for confirmations`);
+
+    if (callback) callback({ ok: true });
+  });
+
+  socket.on("game:map:received", () => {
+    const playerInfo = gameManager.getPlayerBySocketId(socket.id);
+    if (!playerInfo) return;
+
+    const game = gameManager.getGame(playerInfo.gameId);
+    if (!game || game.status !== "starting") return;
+
+    game.mapConfirmations.add(playerInfo.id);
+    console.log(`[game:map:received] Player "${playerInfo.name}" confirmed (${game.mapConfirmations.size}/${game.getConnectedPlayerCount()})`);
+
+    if (game.allPlayersConfirmedMap()) {
+      _finishStarting(io, game, gameManager);
+    }
+  });
+
+  // Re-check map confirmations if a player disconnects during starting phase
+  // Uses process.nextTick so the main disconnect handler in server.js
+  // removes/marks the player first, then we re-check remaining players.
+  socket.on("disconnect", () => {
+    const playerInfo = gameManager.getPlayerBySocketId(socket.id);
+    if (!playerInfo) return;
+
+    const game = gameManager.getGame(playerInfo.gameId);
+    if (!game || game.status !== "starting") return;
+
+    process.nextTick(() => {
+      if (game.status === "starting" && game.allPlayersConfirmedMap()) {
+        console.log(`[game:start] Player disconnected during starting phase, all remaining confirmed`);
+        _finishStarting(io, game, gameManager);
+      }
+    });
+  });
+}
+
+// Called when all players have confirmed map receipt. Starts the game
+// and begins the location broadcast tick.
+function _finishStarting(io, game, gameManager) {
+  console.log(`[game:start] All players confirmed map, starting game ${game.id}`);
 
     // Start the game with the broadcast callback.
     // Every tick, this function is called and sends the
@@ -225,11 +291,7 @@ function registerGameHandlers(io, socket, gameManager) {
       startedAt: game.startedAt,
     });
     console.log(`[game:start] Game ${game.id} started, broadcast tick running every ${game.broadcastIntervalMs}ms`);
-
-    if (callback) callback({ ok: true });
-  });
 }
-
 
 function emitError(socket, callback, event, message) {
   console.warn(`[${event}] ERROR for socket ${socket.id}: ${message}`);

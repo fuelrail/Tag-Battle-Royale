@@ -36,14 +36,12 @@ class PlayerLocationInfo {
   bool get hasLocation => status == "active";
 
   /// Whether the player's location is outdated
-  /// The client can show "Last seen x seconds ago" using [locationAge].
   bool get isStale => status == "stale";
 
   /// Whether the player has never sent a location.
   bool get isUnknown => status == "unknown";
 
   /// Whether the player's socket dropped. May reconnect.
-  /// The client can show "Disconnected xs ago" using [disconnectedAge].
   bool get isDisconnected => status == "disconnected";
 
   factory PlayerLocationInfo.fromJson(Map<String, dynamic> json) {
@@ -92,7 +90,7 @@ class ChatMessage {
 /// Callbacks are used to notify of events. 
 /// 
 /// On reconnection, if [currentGameId] and [currentPlayerId] are set,
-/// the service will attempt to rejoin the game via game:rejoin.
+/// the service will attempt to rejoin the game with game:rejoin.
 class GameSocketService {
   final String serverUrl;
   late IO.Socket _socket;
@@ -220,7 +218,8 @@ class GameSocketService {
     });
   }
 
-  // Games
+  // --- Games ---
+
   void createGame(String playerName, {Map<String, dynamic>? config}) {
     _socket.emitWithAck('game:create', {
       'playerName': playerName,
@@ -264,14 +263,11 @@ class GameSocketService {
     currentPlayerId = null;
   }
 
-  // Chat
   void sendChat(String text) {
     if (!_connected) return;
     _socket.emit('chat:send', {'text': text});
   }
 
-  // Location
-  /// Send your current location to the server.
   void sendLocation({
     required double lat,
     required double lng,

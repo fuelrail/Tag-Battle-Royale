@@ -13,7 +13,7 @@ class CurrentZonePainter extends CustomPainter {
   });
 
   @override
-  void paint(Canvas canvas, Size size) {
+  void paint(Canvas canvas, Size size){
     if (face == null) return;
     if (face!.polygon.length < 2) return;
 
@@ -21,7 +21,7 @@ class CurrentZonePainter extends CustomPainter {
     final first = face!.polygon.first;
     path.moveTo(first.dx, first.dy);
 
-    for (int i = 1; i < face!.polygon.length; i++) {
+    for (int i = 1; i < face!.polygon.length; i++){
       final p = face!.polygon[i];
       path.lineTo(p.dx, p.dy);
     }
@@ -37,7 +37,7 @@ class CurrentZonePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CurrentZonePainter oldDelegate) {
+  bool shouldRepaint(covariant CurrentZonePainter oldDelegate){
     return oldDelegate.face != face ||
         oldDelegate.color != color ||
         oldDelegate.strokeWidth != strokeWidth;

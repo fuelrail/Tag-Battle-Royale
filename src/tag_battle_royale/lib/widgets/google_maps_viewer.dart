@@ -58,12 +58,12 @@ class GoogleMapsState extends State<GoogleMaps> {
 
   // convert the currently displayed map into an image
   Future<ui.Image> _captureMap() async {
-    if (!_controller.isCompleted) {
+    if(!_controller.isCompleted){
       throw StateError('Map controller not ready');
     }
 
     // hide user dot
-    setState(() {
+    setState((){
       _showUserLocation = false;
     });
 
@@ -74,18 +74,18 @@ class GoogleMapsState extends State<GoogleMaps> {
     final bytes = await controller.takeSnapshot();
 
     // show it again
-    if (mounted) {
-      setState(() {
+    if(mounted){
+      setState((){
         _showUserLocation = true;
       });
     }
 
-    if (bytes == null) {
+    if(bytes == null){
       throw StateError('Failed to capture snapshot');
     }
 
     final bounds = await controller.getVisibleRegion();
-    setState(() {
+    setState((){
       _imageBounds = bounds;
     });
 
@@ -165,7 +165,7 @@ class GoogleMapsState extends State<GoogleMaps> {
           ),
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 100, vertical: 30),
               child: Align(
                 alignment: Alignment.bottomCenter,
                 child: SizedBox(

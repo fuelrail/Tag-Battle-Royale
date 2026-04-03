@@ -1,7 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    
+    <!--Permissions, many required permissions for the app are already granted due
+    to the nearby_connections library. -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:label="tag_battle_royale"
         android:name="${applicationName}"
@@ -35,6 +41,12 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Required for keeping the service alive. -->
+        <service
+            android:name="com.baseflow.geolocator.GeolocatorService"
+            android:foregroundServiceType="location" />
+            
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

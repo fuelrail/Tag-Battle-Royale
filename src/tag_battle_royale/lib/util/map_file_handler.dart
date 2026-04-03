@@ -13,7 +13,7 @@ import "faceDetection/face_detection_graph.dart";
 // check all json files in app documents directory
 // deletes any json files that are broken -> debug mode
 Future<List<MapFile>> getMaps() async {
-  final dir = await getApplicationDocumentsDirectory();
+  final dir = await getMapsDirectory();
   final files = dir
       .listSync()
       .whereType<File>()
@@ -41,6 +41,17 @@ Future<List<MapFile>> getMaps() async {
     }
   }
   return maps;
+}
+
+Future<Directory> getMapsDirectory() async {
+  final rootDir = await getApplicationDocumentsDirectory();
+  final mapsDir = Directory('${rootDir.path}/maps');
+
+  if(!await mapsDir.exists()){
+    await mapsDir.create(recursive: true);
+  }
+
+  return mapsDir;
 }
 
 class MapFile {
@@ -148,13 +159,13 @@ class MapFile {
   }
 
   Future<File> saveMapFile() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getMapsDirectory();
     final file = File('${dir.path}/$fileName');
     return file.writeAsString(makeFile());
   }
 
   Future<void> delete() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getMapsDirectory();
     final file = File('${dir.path}/$fileName');
 
     if(await file.exists()){
