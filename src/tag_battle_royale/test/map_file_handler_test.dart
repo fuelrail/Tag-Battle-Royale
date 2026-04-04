@@ -27,6 +27,8 @@ void main() {
       id: '1',
       fileName: '1.json',
       mapName: 'Test Map',
+      imageHeight: 1,
+      imageWidth: 1,
       imageBase64: 'abc123',
       imageBounds: LatLngBounds(
         southwest: const LatLng(1, 2),
@@ -45,6 +47,8 @@ void main() {
     expect(rebuilt.fileName, '1.json');
     expect(rebuilt.mapName, 'Test Map');
     expect(rebuilt.imageBase64, 'abc123');
+    expect(rebuilt.imageHeight, 1);
+    expect(rebuilt.imageWidth, 1);
   });
 
   test('saveMapFile and getMaps', () async {
@@ -53,6 +57,8 @@ void main() {
       fileName: '1.json',
       mapName: 'Test Map',
       imageBase64: 'abc123',
+      imageHeight: 1,
+      imageWidth: 1,
       imageBounds: LatLngBounds(
         southwest: const LatLng(1, 2),
         northeast: const LatLng(3, 4),
@@ -77,6 +83,8 @@ void main() {
       fileName: '1.json',
       mapName: 'Test Map',
       imageBase64: 'abc123',
+      imageHeight: 1,
+      imageWidth: 1,
       imageBounds: LatLngBounds(
         southwest: const LatLng(1, 2),
         northeast: const LatLng(3, 4),

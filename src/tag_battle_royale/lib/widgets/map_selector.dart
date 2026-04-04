@@ -42,7 +42,7 @@ class _MapSelectorState extends State<MapSelector> {
 
   /// Open the map viewer with a "Select Map" button.
   Future<void> _viewAndSelect(MapFile map) async {
-    final selected = await Navigator.push<bool>(
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => MapViewer(
@@ -52,7 +52,7 @@ class _MapSelectorState extends State<MapSelector> {
       ),
     );
 
-    if (selected == true) {
+    if (result.selected == true) {
       widget.onMapSelected(map);
     }
   }

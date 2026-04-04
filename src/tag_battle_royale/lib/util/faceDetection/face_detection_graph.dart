@@ -77,7 +77,16 @@ class GraphBuilder {
 
     rebuildOutgoing(finalVertices, finalEdges);
     final faces = traceFaces(finalVertices, finalEdges).where((f) => !f.isOuter).toList(); 
-    return PlanarGraph(vertices: finalVertices, edges: finalEdges, faces: faces);
+    PlanarGraph graph = PlanarGraph(vertices: finalVertices, edges: finalEdges, faces: faces);
+    final smallFaces = <Face>[];
+    for(final face in faces){
+      if(face.signedArea <= minimumFaceArea){smallFaces.add(face);}
+    }
+    for(final face in smallFaces){
+      graph = deleteFace(graph, face);
+    }
+
+    return graph;
   }
   // unique id for edges v1 -> v2 and v2 -> v1 return the same key
   String edgeKey(int id1, int id2){
@@ -195,7 +204,6 @@ class GraphBuilder {
       }
 
       final area = signedArea(poly);
-      if(area.abs() <= minimumFaceArea) continue;
       //create the face
       faces.add(Face(faceID:0, name:"", polygon: poly, centroid: findPoleOfInaccessibility(poly, pointBuilder), signedArea: area));
     }
@@ -208,7 +216,7 @@ class GraphBuilder {
 
     for(final face in dedup.values){
       face.faceID = faceCount;
-      face.name = "Face $faceCount";
+      face.name = "Zone $faceCount";
       faceCount++;
     }
     return dedup.values.toList();
@@ -455,6 +463,15 @@ class Face {
   @override
   String toString() =>
       'Face(area=${signedArea.toStringAsFixed(2)}, verts=${polygon.length})';
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is Face && other.faceID == faceID;
+  }
+
+  @override
+  int get hashCode => faceID.hashCode;
 }
 
 class PlanarGraph {

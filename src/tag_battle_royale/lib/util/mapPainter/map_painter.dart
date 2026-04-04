@@ -31,6 +31,11 @@ class MapPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size){
     ImagePainter(image).paint(canvas, size);
+    final faces = map?.graph.faces ?? graph?.faces ?? [];
+    FacePainter(
+      faces: faces,
+      drawLabel: drawLabel,
+    ).paint(canvas, size);
 
     if(drawMode){
       StrokePainter(strokes ?? []).paint(canvas, size);
@@ -39,11 +44,6 @@ class MapPainter extends CustomPainter {
       EdgePainter(edges: edges).paint(canvas, size);
     }
 
-    final faces = map?.graph.faces ?? graph?.faces ?? [];
-    FacePainter(
-      faces: faces,
-      drawLabel: drawLabel,
-    ).paint(canvas, size);
   }
 
   @override
