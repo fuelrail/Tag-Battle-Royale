@@ -163,16 +163,16 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
               ),
               const SizedBox(height: 8),
               // Go away
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () async {
-                    await GameSession.clear();
-                    _checkForSavedSession();
-                  },
-                  child: const Text('Dismiss'),
-                ),
-              ),
+              //Align(
+              //  alignment: Alignment.centerRight,
+              //  child: TextButton(
+              //    onPressed: () async {
+              //      await GameSession.clear();
+              //      _checkForSavedSession();
+              //    },
+              //    child: const Text('Dismiss'),
+              //  ),
+              //),
               const SizedBox(height: 16),
             ],
 

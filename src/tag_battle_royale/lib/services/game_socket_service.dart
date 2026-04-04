@@ -86,6 +86,7 @@ class GameSocketService {
   final String serverUrl;
   late IO.Socket _socket;
   bool _connected = false;
+  bool hasMap = false;
 
   // Stored information for reconnection
   String? currentGameId;
@@ -104,6 +105,7 @@ class GameSocketService {
   JsonCallback? onRejoined;                       // { game, playerId }
   JsonCallback? onMapData;                        // map json
   JsonCallback? onPlayerRoleUpdated;              // { playerId, role }
+  JsonCallback? onGameDisbanded;                  // 
   LocationBroadcastCallback? onLocationBroadcast; // { playerId: PlayerLocationInfo }
   ChatMessageCallback? onChatMessage;             // ChatMessage
 
@@ -180,6 +182,11 @@ class GameSocketService {
       onPlayerRoleUpdated?.call(d);
     });
 
+    _socket.on('game:disbanded', (data) {
+      final d = Map<String, dynamic>.from(data);
+      onGameDisbanded?.call(d);
+    });
+
     _socket.on('location:broadcast', (data) {
       final playersRaw = Map<String, dynamic>.from(data);
 
@@ -207,6 +214,7 @@ class GameSocketService {
     _socket.emitWithAck('game:rejoin', {
       'gameId': currentGameId,
       'playerId': currentPlayerId,
+      'hasMap': hasMap,
     }, ack: (response) {
       final d = Map<String, dynamic>.from(response);
       if (d['ok'] == true) {
