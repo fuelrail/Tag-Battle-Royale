@@ -60,6 +60,8 @@ class MapFile {
   final String mapName;
   final String imageBase64;
   final LatLngBounds imageBounds;
+  final int imageHeight;
+  final int imageWidth;
   final PlanarGraph graph;
 
   MapFile({
@@ -68,6 +70,8 @@ class MapFile {
     required this.mapName,
     required this.imageBase64,
     required this.imageBounds,
+    required this.imageHeight,
+    required this.imageWidth,
     required this.graph,
   });
   Future<ui.Image> getImage() async {
@@ -93,6 +97,8 @@ class MapFile {
         },
       },
       'imageBase64': imageBase64,
+      'imageHeight': imageHeight,
+      'imageWidth': imageWidth,
       'graph': graph.toJson(),
     };
   }
@@ -122,6 +128,8 @@ class MapFile {
         ),
       ),
       imageBase64: json['imageBase64'] as String,
+      imageHeight: json['imageHeight'] as int,
+      imageWidth: json['imageWidth'] as int,
       graph: PlanarGraph.fromJson(json['graph'] as Map<String, dynamic>),
     );
   }
@@ -147,6 +155,8 @@ class MapFile {
     final String imageBase64 = base64Encode(bytes);
     final id = _generateUniqueId();
     final fileName = '$id.json';
+    final imageHeight = image.height;
+    final imageWidth = image.width;
 
     return MapFile(
       mapName: name,
@@ -154,6 +164,8 @@ class MapFile {
       fileName: fileName,
       imageBase64: imageBase64,
       imageBounds: imageBounds,
+      imageHeight: imageHeight,
+      imageWidth: imageWidth,
       graph: graph,
     );
   }

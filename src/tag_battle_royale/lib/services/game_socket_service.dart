@@ -10,24 +10,20 @@ typedef ChatMessageCallback = void Function(ChatMessage message);
 class PlayerLocationInfo {
   final String playerId;
   final String playerName;
+  final String role;
   final String status; // "active" or "stale" or "unknown" or "disconnected"
-  final double? lat;
-  final double? lng;
-  final double? heading;
-  final double? speed;
-  final double? accuracy;
+  final double? x;
+  final double? y;
   final int? locationAge; // ms since last location update
   final int? disconnectedAge; // ms since disconnect (only for "disconnected" status)
 
   PlayerLocationInfo({
     required this.playerId,
     required this.playerName,
+    required this.role,
     required this.status,
-    this.lat,
-    this.lng,
-    this.heading,
-    this.speed,
-    this.accuracy,
+    this.x,
+    this.y,
     this.locationAge,
     this.disconnectedAge,
   });
@@ -49,12 +45,10 @@ class PlayerLocationInfo {
     return PlayerLocationInfo(
       playerId: json['playerId'],
       playerName: json['playerName'],
+      role: json['role'] ?? 'runner',
       status: json['status'],
-      lat: loc?['lat']?.toDouble(),
-      lng: loc?['lng']?.toDouble(),
-      heading: loc?['heading']?.toDouble(),
-      speed: loc?['speed']?.toDouble(),
-      accuracy: loc?['accuracy']?.toDouble(),
+      x: loc?['x']?.toDouble(),
+      y: loc?['y']?.toDouble(),
       locationAge: json['locationAge'],
       disconnectedAge: json['disconnectedAge'],
     );
@@ -296,19 +290,15 @@ class GameSocketService {
   }
 
   void sendLocation({
-    required double lat,
-    required double lng,
-    double? heading,
-    double? speed,
-    double? accuracy,
+    required double x,
+    required double y,
+    int? zone,
   }) {
-    if (!_connected) return; 
+    if (!_connected) return;
     _socket.emit('location:update', {
-      'lat': lat,
-      'lng': lng,
-      if (heading != null) 'heading': heading,
-      if (speed != null) 'speed': speed,
-      if (accuracy != null) 'accuracy': accuracy,
+      'x': x,
+      'y': y,
+      if (zone != null) 'zone': zone,
     });
   }
 

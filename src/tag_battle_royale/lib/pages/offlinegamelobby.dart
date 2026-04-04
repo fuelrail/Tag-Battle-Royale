@@ -11,7 +11,7 @@ import '../services/game_socket_service.dart';
 import '../util/map_file_handler.dart';
 import '../main.dart';
 import '../widgets/lobby.dart';
-import '../util/map_selector.dart';
+import '../widgets/map_selector.dart';
 
 // --------------------------------------------------------------------------
 //  Commands for relaying

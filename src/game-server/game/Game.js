@@ -63,6 +63,7 @@ class Game {
   }
 
   // --- Map transfer ---
+  //
   // Check if all connected players have confirmed receiving the map.
   // Called after each game:map:received and after a player disconnects
   // during the starting phase.
@@ -77,59 +78,86 @@ class Game {
 
   // --- Locations for broadcasting ---
   //
-  // Builds the payload that gets sent to players each tick.
+  // Builds the payload that gets sent to a player each tick.
   // Each player entry includes a status property where:
   //   "active"  = location received within staleThresholdMs
   //   "stale"   = connected but no recent location (GPS lost, backgrounded, etc.)
   //   "unknown" = never sent a location
   //   "disconnected" = player's socket dropped, may reconnect
-  getLocationBroadcast() {
+  _buildPlayerEntry(id, player) {
     const now = Date.now();
-    const players = {};
+
+    // Disconnected players, still include them so clients can show their state
+    if (!player.connected) {
+      return {
+        playerId: id,
+        playerName: player.name,
+        role: player.role,
+        status: "disconnected",
+        location: player.location, // last known location, may be null
+        disconnectedAge: now - player.disconnectedAt,
+      };
+    }
+
+    if (!player.location) {
+      return {
+        playerId: id,
+        playerName: player.name,
+        role: player.role,
+        status: "unknown",
+        location: null,
+      };
+    }
+
+    const age = now - player.location.timestamp;
+    const isStale = age > this.staleThresholdMs;
+
+    return {
+      playerId: id,
+      playerName: player.name,
+      role: player.role,
+      status: isStale ? "stale" : "active",
+      location: {
+        x: player.location.x,
+        y: player.location.y,
+        timestamp: player.location.timestamp,
+      },
+      locationAge: age,
+    };
+  }
+
+  getEachPlayerBroadcast() {
+    // Build entries for every player
+    const allEntries = {};
+    for (const [id, player] of this.players) {
+      allEntries[id] = this._buildPlayerEntry(id, player);
+    }
+
+    const result = {}; // { socketId: { playerId: entry, ... } }
 
     for (const [id, player] of this.players) {
-      // Disconnected players, still include them so clients can show their state
-      if (!player.connected) {
-        players[id] = {
-          playerId: id,
-          playerName: player.name,
-          status: "disconnected",
-          location: player.location, // last known location, may be null
-          disconnectedAge: now - player.disconnectedAt,
-        };
+      if (!player.connected) continue;
+
+      if (player.role === "runner") {
         continue;
       }
 
-      if (!player.location) {
-        players[id] = {
-          playerId: id,
-          playerName: player.name,
-          status: "unknown",
-          location: null,
-        };
-      } else {
-        const age = now - player.location.timestamp;
-        const isStale = age > this.staleThresholdMs;
+      // Chasers see other chasers and runners not in a zone (excluding themselves)
+      const filtered = {};
+      for (const [otherId, otherPlayer] of this.players) {
+        if (otherId === id) continue; // skip self
 
-        players[id] = {
-          playerId: id,
-          playerName: player.name,
-          status: isStale ? "stale" : "active",
-          location: {
-            lat: player.location.lat,
-            lng: player.location.lng,
-            heading: player.location.heading,
-            speed: player.location.speed,
-            accuracy: player.location.accuracy,
-            timestamp: player.location.timestamp,
-          },
-          // Last known location age in ms, used for "last seen x seconds ago"
-          locationAge: age,
-        };
+        if (otherPlayer.role === "chaser") {
+          filtered[otherId] = allEntries[otherId];
+        } else if (otherPlayer.role === "runner" && otherPlayer.zone == null) {
+          filtered[otherId] = allEntries[otherId];
+        }
       }
+
+      result[player.socketId] = filtered;
     }
 
-    return players;
+    return result;
   }
 
   // --- Broadcasting ---
@@ -138,8 +166,8 @@ class Game {
 
     this._broadcastTimer = setInterval(() => {
       if (this._broadcastCallback) {
-        const payload = this.getLocationBroadcast();
-        this._broadcastCallback(this.id, payload);
+        const perPlayer = this.getEachPlayerBroadcast();
+        this._broadcastCallback(this.id, perPlayer);
       }
     }, 
       this.broadcastIntervalMs

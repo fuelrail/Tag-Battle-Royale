@@ -5,7 +5,8 @@ import '../services/location_service.dart';
 import '../util/map_file_handler.dart';
 import '../util/gamesession.dart';
 import '../widgets/lobby.dart';
-import '../util/map_selector.dart';
+import '../widgets/map_selector.dart';
+import '../widgets/map_viewer.dart';
 
 import '../main.dart'; 
 
@@ -19,12 +20,10 @@ class OnlineConnectionScreen extends StatefulWidget {
     required this.role,
     required this.playerName,
     this.gameCode,
-    // For reconnecting to an active game:
     this.playerId,
     this.isHostOverride,
   });
 
-  // Passed from main
   final ConnectionRole role;
   final String playerName;
   final String? gameCode;
@@ -61,6 +60,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
   bool get isHost => widget.isHostOverride ?? (widget.role == ConnectionRole.host);
   bool get _isReconnecting => widget.playerId != null;
+  String get _myRole {
+    final me = _players.where((p) => p.id == _socket?.currentPlayerId).firstOrNull;
+    return me?.role ?? 'runner';
+  }
 
   @override
   void initState() {
@@ -186,6 +189,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         gameStarted: true,
       );
 
+      // Map and role will be set when game:map arrives
+      _updateLocationRole();
       _location?.startTracking();
     };
 
@@ -231,6 +236,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       if (!mounted) return;
       try {
         _receivedMap = MapFile.fromJson(mapJson);
+
+        // Give the map to LocationService for coord conversion and zone detection
+        _location?.map = _receivedMap;
+
         // Only confirm during the starting phase (not on rejoin)
         if (!_gameStarted) {
           _socket!.confirmMapReceived();
@@ -246,6 +255,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         } else {
           _addLog('Map received');
         }
+        setState(() {}); // Rebuild to show map tab
       } catch (e) {
         _addLog('ERROR: Failed to deserialize map: $e');
       }
@@ -271,6 +281,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         if (player != null) player.role = role;
       });
       _addLog('${_players.where((p) => p.id == playerId).firstOrNull?.name ?? playerId} is now $role');
+
+      // If this player's role changed, update LocationService
+      if (playerId == _socket?.currentPlayerId) {
+        _updateLocationRole();
+      }
     };
 
     _socket!.onError = (event, message) {
@@ -312,6 +327,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         isHost: id == _hostId,
       ));
     }
+  }
+
+  void _updateLocationRole() {
+    _location?.role = _myRole;
   }
 
   // --- Role switching ---
@@ -362,6 +381,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     setState(() => player.role = newRole);
 
     _socket?.switchPlayerRole(playerId, newRole);
+
+    // If we switched our own role, update LocationService
+    if (playerId == _socket?.currentPlayerId) {
+      _updateLocationRole();
+    }
   }
 
   // ---
@@ -381,12 +405,14 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       gameStarted: true,
     );
 
-    // Start location tracking
+    // Set role and start tracking
+    _updateLocationRole();
     _location?.startTracking();
   }
 
   void _addLog(String message) {
     if (!mounted) return;
+    print('${DateTime.now().toIso8601String().substring(11, 19)} $message');
     setState(() {
       _log.insert(0,
           '${DateTime.now().toIso8601String().substring(11, 19)} $message');
@@ -783,6 +809,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     );
   }
 
+  // --- Map tab ---
+
   Widget _buildMapTab(BuildContext context) {
     // During lobby, host selects a map
     if (!_gameStarted) {
@@ -799,12 +827,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       );
     }
 
-    // Active Game
-    return Center(
-      child: _receivedMap != null
-          ? Text('Map: ${_receivedMap!.mapName}')
-          : const Text('No map data'),
-    );
+    // During active game, show map viewer
+    if (_receivedMap != null) {
+      return MapViewer(map: _receivedMap!);
+    }
+
+    return const Center(child: Text('Waiting for map data...'));
   }
 
   @override

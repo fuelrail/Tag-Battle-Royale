@@ -29,6 +29,25 @@
 //   error                  { event, message }
 //
 
+// Emits per-socket payloads.
+// perPlayerPayloads is { socketId: filteredPayload }
+function makeBroadcastCallback(io, game) {
+  return (gId, perPlayerPayloads) => {
+    // Log status counts from the actual player list
+    const players = Array.from(game.players.values());
+    const activeCount = players.filter(p => p.connected && p.location && (Date.now() - p.location.timestamp) <= game.staleThresholdMs).length;
+    const staleCount = players.filter(p => p.connected && p.location && (Date.now() - p.location.timestamp) > game.staleThresholdMs).length;
+    const unknownCount = players.filter(p => p.connected && !p.location).length;
+    const disconnectedCount = players.filter(p => !p.connected).length;
+    console.log(`[broadcast] Game ${gId}: ${players.length} players (${activeCount} active, ${staleCount} stale, ${unknownCount} unknown, ${disconnectedCount} disconnected)`);
+
+    for (const [socketId, payload] of Object.entries(perPlayerPayloads)) {
+      io.to(socketId).emit("location:broadcast", payload);
+    }
+  };
+}
+
+
 function registerGameHandlers(io, socket, gameManager) {
   
   // Create a new game
@@ -147,14 +166,7 @@ function registerGameHandlers(io, socket, gameManager) {
 
       // Restart broadcasting if it was stopped due to all players disconnecting
       if (game.status === "active" && !game._broadcastTimer) {
-        game.startBroadcasting((gId, payload) => {
-          const playerCount = Object.keys(payload).length;
-          const activeCount = Object.values(payload).filter(p => p.status === "active").length;
-          const staleCount = Object.values(payload).filter(p => p.status === "stale").length;
-          const disconnectedCount = Object.values(payload).filter(p => p.status === "disconnected").length;
-          console.log(`[broadcast] Game ${gId}: ${playerCount} players (${activeCount} active, ${staleCount} stale, ${disconnectedCount} disconnected)`);
-          io.to(gId).emit("location:broadcast", payload);
-        });
+        game.startBroadcasting(makeBroadcastCallback(io, game));
         console.log(`[game:rejoin] Restarted broadcast for game ${game.id}`);
       }
 
@@ -180,7 +192,7 @@ function registerGameHandlers(io, socket, gameManager) {
   });
 
   // Leave current game
-  // Unlike disconnect, this fully removes the player
+  // Unlike a disconnect, this fully removes the player
   socket.on("game:leave", (_, callback) => {
     const player = gameManager.getPlayerBySocketId(socket.id);
     if (!player) {
@@ -337,20 +349,13 @@ function _finishStarting(io, game, gameManager) {
     // Start the game with the broadcast callback.
     // Every tick, this function is called and sends the
     // location payload to every player in the game room.
-    game.start((gameId, payload) => {
-      const playerCount = Object.keys(payload).length;
-      const activeCount = Object.values(payload).filter(p => p.status === "active").length;
-      const staleCount = Object.values(payload).filter(p => p.status === "stale").length;
-      const disconnectedCount = Object.values(payload).filter(p => p.status === "disconnected").length;
-      console.log(`[broadcast] Game ${gameId}: ${playerCount} players (${activeCount} active, ${staleCount} stale, ${disconnectedCount} disconnected)`);
-      io.to(gameId).emit("location:broadcast", payload);
-    });
+  game.start(makeBroadcastCallback(io, game));
 
-    io.to(game.id).emit("game:started", {
-      gameId: game.id,
-      startedAt: game.startedAt,
-    });
-    console.log(`[game:start] Game ${game.id} started, broadcast tick running every ${game.broadcastIntervalMs}ms`);
+  io.to(game.id).emit("game:started", {
+    gameId: game.id,
+    startedAt: game.startedAt,
+  });
+  console.log(`[game:start] Game ${game.id} started, broadcast tick running every ${game.broadcastIntervalMs}ms`);
 }
 
 function emitError(socket, callback, event, message) {

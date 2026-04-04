@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:ui' show Offset;
 import 'package:geolocator/geolocator.dart';
 import 'game_socket_service.dart';
+import '../util/map_file_handler.dart';
 
 /// Streams the device's GPS location to the server at a fixed interval.
 ///
@@ -14,6 +16,15 @@ import 'game_socket_service.dart';
 /// 
 /// Background service is covered with the foreground service
 /// notification in AndroidSettings.
+/// 
+/// Converts GPS coordinates to images coordinates using the map's
+/// image bounds and dimensions before sending.
+///
+/// For runners, also performs zone detection using [MapFile.graph.pointInFace].
+/// If the runner is inside a zone, the zone's faceID is sent alongside
+/// the position. The server uses this to hide the runner from chasers.
+///
+/// Chasers skip zone detection (zone is always null).
 class LocationService {
   final GameSocketService gameSocketService;
   final int sendIntervalMs;
@@ -27,6 +38,8 @@ class LocationService {
   bool _tracking = false;
   int _retryCount = 0;
   bool _socketConnected = false;
+  MapFile? map;
+  String role = 'runner';
 
   /// This can act as a callback for logging in the game screen.
   void Function(String message)? onLog;
@@ -127,6 +140,27 @@ class LocationService {
     });
   }
 
+  /// Convert GPS position to image-space coordinates using the map's
+  /// geo bounds and image dimensions.
+  Offset? _latLngToImage(Position pos) {
+    if (map == null) return null;
+
+    final bounds = map!.imageBounds;
+
+    final south = bounds.southwest.latitude;
+    final west = bounds.southwest.longitude;
+    final north = bounds.northeast.latitude;
+    final east = bounds.northeast.longitude;
+
+    final xNorm = (pos.longitude - west) / (east - west);
+    final yNorm = (north - pos.latitude) / (north - south);
+
+    return Offset(
+      xNorm * map!.imageWidth,
+      yNorm * map!.imageHeight,
+    );
+  }
+
   /// Timer that sends the latest known position to the server at a fixed interval.
   /// Only runs while socket is connected. Only sends if GPS has provided a new
   /// update since the last send.
@@ -140,14 +174,28 @@ class LocationService {
 
         if (_newPositionArrived && _latestPosition != null) {
           final pos = _latestPosition!;
+          final imageOffset = _latLngToImage(pos);
+
+          if (imageOffset == null) {
+            _log('No map available for coordinate conversion');
+            return;
+          }
+
+          // Zone detection: only runners check which zone they're in
+          int? zone;
+          if (role == 'runner') {
+            final face = map!.graph.pointInFace(imageOffset);
+            zone = face?.faceID;
+          }
+
           gameSocketService.sendLocation(
-            lat: pos.latitude,
-            lng: pos.longitude,
-            heading: pos.heading,
-            speed: pos.speed,
-            accuracy: pos.accuracy,
+            x: imageOffset.dx,
+            y: imageOffset.dy,
+            zone: zone,
           );
-          _log('Sent position (${pos.latitude}, ${pos.longitude})');
+
+          _log('Sent position (${imageOffset.dx.toStringAsFixed(1)}, ${imageOffset.dy.toStringAsFixed(1)})'
+              '${zone != null ? ' zone=$zone' : ''}');
           _newPositionArrived = false;
         } else {
           // No position yet, server will mark us as stale after its threshold

@@ -5,6 +5,7 @@ class Player {
     this.socketId = socketId;
     this.gameId = gameId;
     this.role = "runner";
+    this.zone = null; // faceID (int) if runner is in a zone, null otherwise
     this.location = null;
     this.lastUpdateAt = 0; // last location update time
     this.connectedAt = Date.now();
@@ -12,16 +13,16 @@ class Player {
     this.disconnectedAt = null; // timestamp of last disconnect
   }
 
-  updateLocation(locationData) {
+  updateLocation(data) {
+    const now = Date.now();
     this.location = {
-      lat: locationData.lat,
-      lng: locationData.lng,
-      heading: locationData.heading ?? null,
-      speed: locationData.speed ?? null,
-      accuracy: locationData.accuracy ?? null,
-      timestamp: Date.now(),
+      x: data.x,
+      y: data.y,
+      timestamp: now,
     };
-    this.lastUpdateAt = Date.now();
+    // Only runners send zone info, chasers leave it null
+    this.zone = data.zone ?? null;
+    this.lastUpdateAt = now;
   }
 
   /// Mark the player as disconnected but keep them in the game

@@ -1,7 +1,7 @@
 // --- Real-time location updates between players ---
 //
 // Events received from the client:
-//   location:update   { lat, lng, heading?, speed?, accuracy? }
+//   location:update   { x, y, zone? }
 //
 
 const MIN_UPDATE_INTERVAL_MS = 500; // max amount of updates that can be sent by client
@@ -28,25 +28,17 @@ function registerLocationHandlers(io, socket, gameManager) {
       return; // Silently drop
     }
 
-    if (typeof data.lat !== "number" || typeof data.lng !== "number") {
-      console.log(`[location:update] Rejected — invalid lat/lng from "${player.name}" (${player.id})`);
+    if (typeof data.x !== "number" || typeof data.y !== "number") {
+      console.log(`[location:update] Rejected — invalid x/y from "${player.name}" (${player.id})`);
       return socket.emit("error", {
         event: "location:update",
-        message: "lat and lng are required numbers",
-      });
-    }
-
-    if (data.lat < -90 || data.lat > 90 || data.lng < -180 || data.lng > 180) {
-      console.log(`[location:update] Rejected — lat/lng out of range from "${player.name}" (${player.id}): ${data.lat}, ${data.lng}`);
-      return socket.emit("error", {
-        event: "location:update",
-        message: "lat/lng out of range",
+        message: "x and y are required numbers",
       });
     }
 
     // Update
     player.updateLocation(data);
-    console.log(`[location:update] "${player.name}" (${player.id}) in game ${player.gameId}: ${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}`);
+    console.log(`[location:update] "${player.name}" (${player.id}) in game ${player.gameId}: (${data.x.toFixed(1)}, ${data.y.toFixed(1)})${data.zone != null ? ` zone=${data.zone}` : ''}`);
   });
 }
 

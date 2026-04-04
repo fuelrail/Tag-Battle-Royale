@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../util/map_file_handler.dart';
-import '../widgets/map_viewer.dart';
-import '../widgets/google_maps_viewer.dart';
+import 'map_viewer.dart';
+import 'google_maps_viewer.dart';
 
 /// Map browser that lets the host view and select a map for the game.
 /// Used by both online and offline lobbies.
