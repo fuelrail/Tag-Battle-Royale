@@ -105,6 +105,7 @@ class GameSocketService {
   JsonCallback? onRejoined;                       // { game, playerId }
   JsonCallback? onMapData;                        // map json
   JsonCallback? onPlayerRoleUpdated;              // { playerId, role }
+  JsonCallback? onGameDisbanded;                  // 
   LocationBroadcastCallback? onLocationBroadcast; // { playerId: PlayerLocationInfo }
   ChatMessageCallback? onChatMessage;             // ChatMessage
 
@@ -179,6 +180,11 @@ class GameSocketService {
     _socket.on('player:role:updated', (data) {
       final d = Map<String, dynamic>.from(data);
       onPlayerRoleUpdated?.call(d);
+    });
+
+    _socket.on('game:disbanded', (data) {
+      final d = Map<String, dynamic>.from(data);
+      onGameDisbanded?.call(d);
     });
 
     _socket.on('location:broadcast', (data) {

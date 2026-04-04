@@ -65,14 +65,21 @@ io.on("connection", (socket) => {
         gameManager.socketToPlayer.delete(socket.id);
         console.log(`[disconnect] Client: (${socket.id}) Reason: (${reason}) PlayerName: (${player.name}) PlayerId: (${player.id}) "fully removed from lobby game" (${gameId})`);
 
-        io.to(gameId).emit("player:left", {
-          playerId: player.id,
-          playerName: player.name,
-          remainingPlayers: game.getPlayerList(),
-        });
-
-        // If no connected players remain, schedule game cleanup
-        gameManager.scheduleCleanupIfEmpty(gameId);
+        if (player.id === game.hostId) {
+          // Host left during lobby, disband
+          io.to(gameId).emit("game:disbanded", { reason: "Host left the game" });
+          gameManager.removeGame(gameId);
+          console.log(`[disconnect] Game ${gameId} disbanded (host left)`);
+        } else {
+          io.to(gameId).emit("player:left", {
+            playerId: player.id,
+            playerName: player.name,
+            remainingPlayers: game.getPlayerList(),
+          });
+        
+          // If no connected players remain, schedule game cleanup
+          gameManager.scheduleCleanupIfEmpty(gameId);
+        }
 
       } else if (game) {
         // Active game, mark disconnected, let them reconnect with same identity

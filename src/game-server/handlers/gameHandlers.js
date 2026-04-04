@@ -211,17 +211,25 @@ function registerGameHandlers(io, socket, gameManager) {
     console.log(`[game:leave] Player "${playerName}" (${playerId}) left game ${gameId} (intentional)`);
 
     const game = gameManager.getGame(gameId);
-    if (game) {
-      // Notify remaining players
-      io.to(gameId).emit("player:left", {
-        playerId: playerId,
-        playerName: playerName,
-        remainingPlayers: game.getPlayerList(),
-      });
-      console.log(`[game:leave] Game ${gameId} now has ${game.getConnectedPlayerCount()} connected players`);
 
-      // Do cleanup if the game is now empty
-      gameManager.scheduleCleanupIfEmpty(gameId);
+    if (game) {
+      if (game.status === "waiting" && playerId === game.hostId) {
+        // Host left during lobby, disband
+        io.to(gameId).emit("game:disbanded", { reason: "Host left the game" });
+        gameManager.removeGame(gameId);
+        console.log(`[game:leave] Game ${gameId} disbanded (host left)`);
+      } else {
+        // Notify remaining players
+        io.to(gameId).emit("player:left", {
+          playerId: playerId,
+          playerName: playerName,
+          remainingPlayers: game.getPlayerList(),
+        });
+        console.log(`[game:leave] Game ${gameId} now has ${game.getConnectedPlayerCount()} connected players`);
+        
+        // Do cleanup if the game is now empty
+        gameManager.scheduleCleanupIfEmpty(gameId);
+      }
     }
 
     if (callback) callback({ ok: true });

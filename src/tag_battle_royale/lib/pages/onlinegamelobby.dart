@@ -96,7 +96,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         _addLog('Connection timed out');
         // If reconnecting, auto-pop after showing the error
         if (_isReconnecting) {
-          _scheduleAutoPop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Connection timed out')),
+          );
+          Navigator.popUntil(context, (route) => route.isFirst);
         }
       }
     });
@@ -289,6 +292,16 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       }
     };
 
+    _socket!.onGameDisbanded = (data) {
+      if (!mounted) return;
+      final reason = data['reason']?.toString() ?? 'Game disbanded';
+      GameSession.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(reason)),
+      );
+      Navigator.popUntil(context, (route) => route.isFirst);
+    };
+
     _socket!.onError = (event, message) {
       if (!mounted) return;
       _addLog('ERROR [$event]: $message');
@@ -302,9 +315,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       // Rejoin failed, game no longer exists
       if (event == 'game:rejoin') {
         GameSession.clear();
-        setState(() => _status = 'Error');
-        _addLog('Could not reconnect, game may no longer exist');
-        _scheduleAutoPop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not reconnect, game may no longer exist')),
+        );
+        Navigator.popUntil(context, (route) => route.isFirst);
       }
     };
   }
@@ -421,19 +435,27 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     });
   }
 
-  void _scheduleAutoPop() {
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) Navigator.pop(context);
-    });
-  }
-
   /// Show a confirmation box when leaving an active game.
   Future<bool> _confirmLeave() async {
+    final String title;
+    final String content;
+
+    if (_gameStarted) {
+      title = 'Leave game?';
+      content = 'You will be marked as disconnected. You can reconnect later from the main menu.';
+    } else if (isHost) {
+      title = 'Disband game?';
+      content = 'Leaving will disband the game for all players. Are you sure?';
+    } else {
+      title = 'Leave game?';
+      content = 'Are you sure you want to leave?';
+    }
+
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Leave game?'),
-        content: const Text('You will be marked as disconnected. You can reconnect later from the main menu.'),
+        title: Text(title),
+        content: Text(content),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -465,6 +487,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _socket?.onChatMessage = null;
     _socket?.onMapData = null;
     _socket?.onPlayerRoleUpdated = null;
+    _socket?.onGameDisbanded = null;
     _socket?.onError = null;
   }
 
@@ -680,7 +703,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                   const Text('Failed to connect to server'),
                   const SizedBox(height: 12),
                   FilledButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => Navigator.popUntil(context, (route) => route.isFirst),
                     child: const Text('Go Back'),
                   ),
                 ],
@@ -839,12 +862,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_gameStarted,
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) async { // might work?
         if (didPop) return;
         final shouldLeave = await _confirmLeave();
         if (shouldLeave && context.mounted) {
-          Navigator.pop(context);
+          Navigator.popUntil(context, (route) => route.isFirst);
         }
       },
       child: LobbyLayout(
