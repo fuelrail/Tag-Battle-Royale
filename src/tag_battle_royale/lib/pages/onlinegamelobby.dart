@@ -236,6 +236,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       if (!mounted) return;
       try {
         _receivedMap = MapFile.fromJson(mapJson);
+        _socket!.hasMap = true;
 
         // Give the map to LocationService for coord conversion and zone detection
         _location?.map = _receivedMap;

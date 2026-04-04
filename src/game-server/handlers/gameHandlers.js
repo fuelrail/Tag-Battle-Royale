@@ -159,7 +159,7 @@ function registerGameHandlers(io, socket, gameManager) {
       // Tell the reconnected player they're back
       callback({ ok: true, game: game.toJSON(), playerId: player.id });
 
-      if (game.mapData) {
+      if (game.mapData && !data.hasMap) {
         socket.emit("game:map", game.mapData);
         console.log(`[game:rejoin] Sent map data to reconnecting player "${player.name} (${player.id})"`);
       }

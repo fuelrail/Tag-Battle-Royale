@@ -75,7 +75,7 @@ class GameManager {
 
   // Reconnection, restore the disconnected player with a new socket
   // Returns the player if reconnection succeeds, null if not found
-  reconnectPlayer(gameId, playerId, newSocketId) {
+reconnectPlayer(gameId, playerId, newSocketId) {
     const game = this.games.get(gameId);
     if (!game) {
       console.log(`[GameManager] Reconnect failed, game ${gameId} not found`);
@@ -88,11 +88,17 @@ class GameManager {
       return null;
     }
 
+    // Remove old socket mapping to prevent marking us disconnected 
+    // after we've already reconnected
+    if (player.socketId && player.socketId !== newSocketId) {
+      this.socketToPlayer.delete(player.socketId);
+    }
+
     player.reconnect(newSocketId);
     this.socketToPlayer.set(newSocketId, { playerId, gameId });
     console.log(`[GameManager] Player "${player.name}" (${playerId}) reconnected to game ${gameId} with socket ${newSocketId}`);
     return player;
-  }
+}
 
   // Fully remove a player
   removePlayer(gameId, playerId) {
