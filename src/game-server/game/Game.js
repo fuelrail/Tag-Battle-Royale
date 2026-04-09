@@ -5,6 +5,7 @@ class Game {
     this.players = new Map(); // { playerId: Player }
     this.status = "waiting"; // waiting or active or finished
     this.createdAt = Date.now();
+    this.startedAt = null;
     this.maxPlayers = config.maxPlayers || 10;
     this.metadata = config.metadata || {};
 
@@ -17,6 +18,8 @@ class Game {
     // Map transfer
     this.mapData = null;
     this.mapConfirmations = new Set(); // playerIds that confirmed receival
+    this.faceOrder = [];        // ordered list of faceIDs
+    this.closureIntervalMs = null;
   }
 
   // --- Players ---
@@ -149,7 +152,7 @@ class Game {
 
         if (otherPlayer.role === "chaser") {
           filtered[otherId] = allEntries[otherId];
-        } else if (otherPlayer.role === "runner" && otherPlayer.zone == null) {
+        } else if (otherPlayer.role === "runner" && otherPlayer.revealed) {
           filtered[otherId] = allEntries[otherId];
         }
       }
@@ -204,6 +207,7 @@ class Game {
       maxPlayers: this.maxPlayers,
       players: this.getPlayerList(),
       createdAt: this.createdAt,
+      startedAt: this.startedAt,
       metadata: this.metadata,
     };
   }

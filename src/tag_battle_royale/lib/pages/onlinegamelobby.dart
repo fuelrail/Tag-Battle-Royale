@@ -54,8 +54,15 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   MapFile? _selectedMap; // host only
   bool _isStarting = false;
   MapFile? _receivedMap;
+  List<int>? _faceOrder;       // ordered faceIDsr
+  int _closureMinutes = 15;    // default 15
+  final TextEditingController _closureMinutesController =
+      TextEditingController(text: '15');
 
   bool _gameStarted = false;
+  DateTime? _gameStartedAt;
+  List<int> _activeFaceOrder = [];   // received from server
+  int _activeClosureIntervalMs = 15 * 60 * 1000;
   final Map<String, PlayerLocationInfo> _playerLocations = {};
 
   bool get isHost => widget.isHostOverride ?? (widget.role == ConnectionRole.host);
@@ -64,7 +71,14 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     final me = _players.where((p) => p.id == _socket?.currentPlayerId).firstOrNull;
     return me?.role ?? 'runner';
   }
-
+  // Compute which zones have closed based on elapsed time since game start.
+  Set<int> get _closedZones {
+    if (_gameStartedAt == null || _activeFaceOrder.isEmpty) return {};
+    final elapsed = DateTime.now().difference(_gameStartedAt!).inMilliseconds;
+    final closedCount = elapsed ~/ _activeClosureIntervalMs;
+    return _activeFaceOrder.take(closedCount).toSet();
+  }
+  
   @override
   void initState() {
     super.initState();
@@ -92,14 +106,15 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     // Timeout if we can't connect within 15 seconds
     Future.delayed(const Duration(seconds: 15), () {
       if (mounted && _status == 'Disconnected') {
-        setState(() => _status = 'Error');
-        _addLog('Connection timed out');
-        // If reconnecting, auto-pop after showing the error
+        // If reconnecting, pop after showing the error
         if (_isReconnecting) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Connection timed out')),
           );
           Navigator.popUntil(context, (route) => route.isFirst);
+        } else {
+          setState(() => _status = 'Error');
+          _addLog('Connection timed out');
         }
       }
     });
@@ -174,10 +189,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
     _socket!.onRejoined = (data) {
       if (!mounted) return;
+
       setState(() {
         _gameId = data['game']?['id'] ?? _gameId;
         _hostId = data['game']?['hostId']?.toString() ?? _hostId;
         _gameStarted = true;
+        _gameStartedAt = DateTime.fromMillisecondsSinceEpoch(data['game']?['startedAt']);
         if (data['game']?['players'] != null) {
           _updatePlayerList(data['game']['players']);
         }
@@ -192,9 +209,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         gameStarted: true,
       );
 
-      // Map and role will be set when game:map arrives
+      // Map and role will be set when the map arrives
       _updateLocationRole();
-      _location?.startTracking();
+      _location?.getClosedZones = () => _closedZones;
+      // Tracking will start when the map arrives
     };
 
     _socket!.onPlayerJoined = (data) {
@@ -226,8 +244,34 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
     _socket!.onGameStarted = (data) {
       if (!mounted) return;
-      _addLog('Game started!');
-      _onGameStarted();
+      
+      setState(() {
+        _isStarting = false;
+        _gameStarted = true;
+        _gameStartedAt = DateTime.fromMillisecondsSinceEpoch(data['startedAt']);
+      });
+      _addLog('Game start time: $_gameStartedAt');
+      _addLog('Closed zones: ${_closedZones.length}');
+
+      if (isHost) {
+        _receivedMap = _selectedMap;
+        _location?.map = _selectedMap;
+        _socket!.hasMap = true;
+      }
+
+      // Save session for reconnection
+      GameSession.save(
+        gameId: _socket!.currentGameId!,
+        playerId: _socket!.currentPlayerId!,
+        playerName: widget.playerName,
+        isHost: isHost,
+        gameStarted: true,
+      );
+
+      // Set role and start tracking
+      _updateLocationRole();
+      _location?.getClosedZones = () => _closedZones;
+      _location?.startTracking();
     };
 
     _socket!.onChatMessage = (message) {
@@ -235,29 +279,41 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       setState(() => _chatMessages.add(message));
     };
 
-    _socket!.onMapData = (mapJson) {
+    _socket!.onMapData = (data) {
       if (!mounted) return;
       try {
+        final mapJson = data['map'] as Map<String, dynamic>;
         _receivedMap = MapFile.fromJson(mapJson);
+        _activeFaceOrder = List<int>.from(data['faceOrder']);
+        _activeClosureIntervalMs = data['closureIntervalMs'];
+
+        _location?.map = _receivedMap;
         _socket!.hasMap = true;
 
-        // Give the map to LocationService for coord conversion and zone detection
-        _location?.map = _receivedMap;
+        if (_gameStarted && !_location!.isTracking) {
+          _updateLocationRole();
+          _location?.getClosedZones = () => _closedZones;
+          _location?.startTracking();
+        }
 
         // Only confirm during the starting phase (not on rejoin)
         if (!_gameStarted) {
           _socket!.confirmMapReceived();
-        _addLog('Map received and confirmed');
-        // Save session for host and joiners for active game
-        GameSession.save(
-          gameId: _socket!.currentGameId!,
-          playerId: _socket!.currentPlayerId!,
-          playerName: widget.playerName,
-          isHost: isHost,
-          gameStarted: true,
+          _addLog('Map received and confirmed');
+          _addLog('Face order: ${_activeFaceOrder.toString()} zones, '
+            'closure interval: ${_activeClosureIntervalMs ~/ 1000}s');
+          // Save session for host and joiners for active game
+          GameSession.save(
+            gameId: _socket!.currentGameId!,
+            playerId: _socket!.currentPlayerId!,
+            playerName: widget.playerName,
+            isHost: isHost,
+            gameStarted: true,
           );
         } else {
           _addLog('Map received');
+          _addLog('Face order: ${_activeFaceOrder.length} zones, '
+            'closure interval: ${_activeClosureIntervalMs ~/ 1000}s');
         }
         setState(() {}); // Rebuild to show map tab
       } catch (e) {
@@ -405,26 +461,6 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
   // ---
 
-  void _onGameStarted() {
-    setState(() {
-      _isStarting = false;
-      _gameStarted = true;
-    });
-
-    // Save session for reconnection
-    GameSession.save(
-      gameId: _socket!.currentGameId!,
-      playerId: _socket!.currentPlayerId!,
-      playerName: widget.playerName,
-      isHost: isHost,
-      gameStarted: true,
-    );
-
-    // Set role and start tracking
-    _updateLocationRole();
-    _location?.startTracking();
-  }
-
   void _addLog(String message) {
     if (!mounted) return;
     print('${DateTime.now().toIso8601String().substring(11, 19)} $message');
@@ -503,19 +539,46 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _location?.dispose();
     _socket?.disconnect();
     _playersScrollController.dispose();
+    _closureMinutesController.dispose();;
     super.dispose();
   }
 
   // --- Sub Tab Builders for Game Tab ---
 
   Widget _buildRulesSubTab() {
-    return const Center(
+    return Padding(
+      padding: const EdgeInsets.all(16),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.rule, size: 48, color: Colors.grey),
-          SizedBox(height: 12),
-          Text('Rules coming soon', style: TextStyle(color: Colors.grey)),
+          Text('Zone Closure', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Text('Close a zone every '),
+              SizedBox(
+                width: 60,
+                child: TextField(
+                  controller: _closureMinutesController,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  enabled: isHost && !_gameStarted,
+                  onChanged: (v) {
+                    final m = int.tryParse(v);
+                    if (m != null && m > 0) {
+                      _closureMinutes = m;
+                    }
+                  },
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const Text(' minutes'),
+            ],
+          ),
         ],
       ),
     );
@@ -807,11 +870,15 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                     child: FilledButton.icon(
                       icon: const Icon(Icons.play_arrow),
                       label: const Text('Start Game'),
-                      onPressed: _selectedMap == null
+                      onPressed: (_selectedMap == null || _faceOrder == null)
                           ? null
                           : () {
                               setState(() => _isStarting = true);
-                              _socket!.startGame(_selectedMap!.toJson());
+                              _socket!.startGame(
+                                _selectedMap!.toJson(),
+                                faceOrder: _faceOrder!,
+                                closureIntervalMs: _closureMinutes * 60 * 1000,
+                              );
                               _addLog('Starting game, sending map to players…');
                             },
                     ),
@@ -842,11 +909,20 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         canCreateMaps: true,
         selectedMapName: _selectedMap?.mapName,
         selectedMapId: _selectedMap?.id,
-        onMapSelected: (map) {
-          setState(() => _selectedMap = map);
+        onMapSelected: (map, faces) {
+          setState(() {
+            _selectedMap = map;
+            if (faces != null) {
+              _faceOrder = faces.map<int>((f) => f.faceID as int).toList();
+            } else {
+              _faceOrder = null;
+            }
+          });
           if (map != null) {
             _addLog('Selected map: ${map.mapName}');
-          }
+          } else {
+            _addLog('Map failed to select');
+          };
         },
       );
     }

@@ -19,12 +19,6 @@ import '../util/map_file_handler.dart';
 /// 
 /// Converts GPS coordinates to images coordinates using the map's
 /// image bounds and dimensions before sending.
-///
-/// For runners, also performs zone detection using [MapFile.graph.pointInFace].
-/// If the runner is inside a zone, the zone's faceID is sent alongside
-/// the position. The server uses this to hide the runner from chasers.
-///
-/// Chasers skip zone detection (zone is always null).
 class LocationService {
   final GameSocketService gameSocketService;
   final int sendIntervalMs;
@@ -40,6 +34,11 @@ class LocationService {
   bool _socketConnected = false;
   MapFile? map;
   String role = 'runner';
+
+  /// Get the current set of closed zone faceIDs.
+  /// Provided by the lobby screen which computes this from elapsed time.
+  Set<int> Function()? getClosedZones;
+
 
   /// This can act as a callback for logging in the game screen.
   void Function(String message)? onLog;
@@ -181,21 +180,29 @@ class LocationService {
             return;
           }
 
-          // Zone detection: only runners check which zone they're in
           int? zone;
+          final face = map!.graph.pointInFace(imageOffset);
+          zone = face?.faceID;
+
+          bool revealed = true;
           if (role == 'runner') {
-            final face = map!.graph.pointInFace(imageOffset);
-            zone = face?.faceID;
+            final closedZones = getClosedZones?.call() ?? {};
+            // Runner is hidden only if in a zone that is still open
+            revealed = zone == null || closedZones.contains(zone);
           }
 
           gameSocketService.sendLocation(
             x: imageOffset.dx,
             y: imageOffset.dy,
             zone: zone,
+            revealed: revealed,
           );
 
           _log('Sent position (${imageOffset.dx.toStringAsFixed(1)}, ${imageOffset.dy.toStringAsFixed(1)})'
-              '${zone != null ? ' zone=$zone' : ''}');
+              '${zone != null ? ' zone=$zone' : ''}'
+              ' revealed=$revealed');
+          final closedZones = getClosedZones?.call() ?? {};
+          _log('Zone check: zone=$zone closedZones=$closedZones revealed=$revealed getClosedZones=${getClosedZones != null}');
           _newPositionArrived = false;
         } else {
           // No position yet, server will mark us as stale after its threshold
@@ -215,6 +222,7 @@ class LocationService {
     _tracking = false;
     _retryCount = 0;
     _socketConnected = false;
+    getClosedZones = null;
     _log('Location tracking stopped');
   }
 
