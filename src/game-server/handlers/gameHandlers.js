@@ -319,11 +319,6 @@ function registerGameHandlers(io, socket, gameManager) {
       return emitError(socket, callback, "player:role", "Game not found");
     }
 
-    // Only host can switch roles
-    if (playerInfo.id !== game.hostId) {
-      return emitError(socket, callback, "player:role", "Only the host can switch roles");
-    }
-
     const { playerId, role } = data;
     if (!playerId || !["runner", "chaser"].includes(role)) {
       return emitError(socket, callback, "player:role", "Invalid playerId or role");
@@ -332,6 +327,16 @@ function registerGameHandlers(io, socket, gameManager) {
     // Can't change host's role
     if (playerId === game.hostId) {
       return emitError(socket, callback, "player:role", "Cannot change the host's role");
+    }
+
+    // Non-host can only switch themselves from runner to chaser
+    if (playerInfo.id !== game.hostId) {
+      if (playerId !== playerInfo.id) {
+        return emitError(socket, callback, "player:role", "You can only change your own role");
+      }
+      if (playerInfo.role !== "runner" || role !== "chaser") {
+        return emitError(socket, callback, "player:role", "You can only switch from runner to chaser");
+      }
     }
 
     const targetPlayer = game.getPlayer(playerId);

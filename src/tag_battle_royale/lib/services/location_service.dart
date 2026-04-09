@@ -201,8 +201,8 @@ class LocationService {
           _log('Sent position (${imageOffset.dx.toStringAsFixed(1)}, ${imageOffset.dy.toStringAsFixed(1)})'
               '${zone != null ? ' zone=$zone' : ''}'
               ' revealed=$revealed');
-          final closedZones = getClosedZones?.call() ?? {};
-          _log('Zone check: zone=$zone closedZones=$closedZones revealed=$revealed getClosedZones=${getClosedZones != null}');
+          //final closedZones = getClosedZones?.call() ?? {};
+          //_log('Zone check: zone=$zone closedZones=$closedZones revealed=$revealed getClosedZones=${getClosedZones != null}');
           _newPositionArrived = false;
         } else {
           // No position yet, server will mark us as stale after its threshold

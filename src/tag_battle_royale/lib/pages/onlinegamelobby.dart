@@ -271,7 +271,9 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       // Set role and start tracking
       _updateLocationRole();
       _location?.getClosedZones = () => _closedZones;
-      _location?.startTracking();
+      if (_location?.map != null) {
+        _location?.startTracking();
+      }
     };
 
     _socket!.onChatMessage = (message) {
@@ -323,6 +325,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   
     _socket!.onLocationBroadcast = (players) {
       if (!mounted) return;
+      _addLog('Broadcast: ${players.entries.map((e) {
+        final p = e.value;
+        final pos = p.x != null ? '(${p.x!.toStringAsFixed(1)}, ${p.y!.toStringAsFixed(1)})' : 'no pos';
+        return '${p.playerName}(${p.role}) $pos ${p.status}';
+      }).join(', ')}');
       setState(() {
         _playerLocations
           ..clear()
@@ -407,6 +414,14 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   // --- Role switching ---
 
   void _switchRole(String playerId) {
+    if (playerId == _hostId) return;
+
+    // Self-switches (caught button) skip confirmation popup
+    if (playerId == _socket?.currentPlayerId) {
+      _doRoleSwitch(playerId);
+      return;
+    }
+
     if (_gameStarted) {
       _confirmRoleSwitch(playerId);
     } else {
@@ -539,7 +554,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _location?.dispose();
     _socket?.disconnect();
     _playersScrollController.dispose();
-    _closureMinutesController.dispose();;
+    _closureMinutesController.dispose();
     super.dispose();
   }
 
@@ -804,6 +819,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
             ),
             const SizedBox(height: 4),
             Text(
+              'Code: $_gameId',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 4),
+            Text(
               '${_players.length} player${_players.length == 1 ? '' : 's'}',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -929,7 +950,29 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
     // During active game, show map viewer
     if (_receivedMap != null) {
-      return MapViewer(map: _receivedMap!);
+      final amRunner = _myRole == 'runner';
+      return Stack(
+        children: [
+          MapViewer(map: _receivedMap!, showAppBar: false),
+          if (amRunner)
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: 24,
+              child: SafeArea(
+                top: false,
+                child: _CaughtButton(
+                  onCaught: () {
+                    final myId = _socket?.currentPlayerId;
+                    if (myId != null) {
+                      _switchRole(myId);
+                    }
+                  },
+                ),
+              ),
+            ),
+        ],
+      );
     }
 
     return const Center(child: Text('Waiting for map data...'));
@@ -947,11 +990,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         }
       },
       child: LobbyLayout(
-        title: _gameStarted
-            ? 'Game: ${_gameId ?? "..."}'
-            : _gameId != null
-                ? 'Lobby: $_gameId'
-                : 'Connecting...',
+      title: _gameStarted
+          ? '${isHost ? "Host" : "Player"}: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}'
+          : _gameId != null
+              ? 'Lobby: $_gameId'
+              : 'Connecting...',
         isConnected: _status == 'Connected',
         players: _players,
         chatMessages: _chatMessages,
@@ -961,6 +1004,96 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         gameTabBuilder: _buildGameTab,
         // Host gets map tab in lobby, everyone gets it during game
         mapTabBuilder: (isHost || _gameStarted) ? _buildMapTab : null,
+      ),
+    );
+  }
+}
+
+// --- Caught Button Widget ---
+
+class _CaughtButton extends StatefulWidget {
+  const _CaughtButton({required this.onCaught});
+  final VoidCallback onCaught;
+
+  @override
+  State<_CaughtButton> createState() => _CaughtButtonState();
+}
+
+class _CaughtButtonState extends State<_CaughtButton>
+    with SingleTickerProviderStateMixin {
+  static const _holdDuration = Duration(seconds: 4);
+  late final AnimationController _controller;
+  bool _triggered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: _holdDuration);
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed && !_triggered) {
+        _triggered = true;
+        widget.onCaught();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onDown(PointerDownEvent _) {
+    _controller.forward(from: 0);
+  }
+
+  void _onUp(PointerEvent _) {
+    if (!_triggered) {
+      _controller.reset();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: _onDown,
+      onPointerUp: _onUp,
+      onPointerCancel: _onUp,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return Container(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                    value: _controller.value,
+                    strokeWidth: 3,
+                    color: Theme.of(context).colorScheme.error,
+                    backgroundColor: Theme.of(context).colorScheme.error.withValues(alpha: 0.2),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  "I've been caught (hold)",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

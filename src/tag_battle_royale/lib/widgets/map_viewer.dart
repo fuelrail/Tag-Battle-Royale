@@ -17,6 +17,7 @@ class MapViewer extends StatefulWidget {
     required this.map,
     this.playing = false,
     this.showSelectButton = false,
+    this.showAppBar = true,
     this.position,
     this.colour = const Color(0xFF2196F3),
   });
@@ -24,6 +25,7 @@ class MapViewer extends StatefulWidget {
   final bool playing;
   final MapFile map;
   final bool showSelectButton;
+  final bool showAppBar;
   final ui.Offset? position;
   final Color colour;
 
@@ -130,27 +132,30 @@ class _MapViewerState extends State<MapViewer> {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text(widget.map.mapName),
-        titleTextStyle: const TextStyle(
-          color: Color.fromARGB(255, 255, 255, 255),
-          fontSize: 20,
-        ),
-        iconTheme: const IconThemeData(
-          color: Color.fromARGB(255, 255, 255, 255),
-        ),
-        backgroundColor: const Color.fromARGB(60, 0, 0, 0),
-        elevation: 0,
-      ),
+      appBar: widget.showAppBar
+        ? AppBar(
+            title: Text(widget.map.mapName),
+            titleTextStyle: const TextStyle(
+              color: Color.fromARGB(255, 255, 255, 255),
+              fontSize: 20,
+            ),
+            iconTheme: const IconThemeData(
+              color: Color.fromARGB(255, 255, 255, 255),
+            ),
+            backgroundColor: const Color.fromARGB(60, 0, 0, 0),
+            elevation: 0,
+          )
+        : null,
       body: Stack(
         children: [ 
           MapTransform(
-            onTapScene: (scenePoint) {
-              final face = widget.map.graph.pointInFace(scenePoint);
-              if (face == null) return;
-
-              _toggleFace(face);
-            },
+            onTapScene: widget.showSelectButton
+              ? (scenePoint) {
+                  final face = widget.map.graph.pointInFace(scenePoint);
+                  if (face == null) return;
+                  _toggleFace(face);
+                }
+              : null,
             image: image!,
             child: Stack(
               children: [
@@ -163,10 +168,11 @@ class _MapViewerState extends State<MapViewer> {
                     drawLabel: true,
                   ),
                 ),
-                CustomPaint(
-                  size: Size(image!.width.toDouble(), image!.height.toDouble()),
-                  painter: SelectedZonePainter(faces: _selectedFaces,),
-                ),
+                if (widget.showSelectButton)
+                  CustomPaint(
+                    size: Size(image!.width.toDouble(), image!.height.toDouble()),
+                    painter: SelectedZonePainter(faces: _selectedFaces,),
+                  ),
                 CustomPaint(
                   size: Size(image!.width.toDouble(), image!.height.toDouble()),
                   painter: CurrentZonePainter(face: _currentZone),
