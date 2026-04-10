@@ -35,6 +35,9 @@ class LocationService {
   MapFile? map;
   String role = 'runner';
 
+  /// During grace period, runners are always hidden.
+  bool inGracePeriod = false;
+
   /// Get the current set of closed zone faceIDs.
   /// Provided by the lobby screen which computes this from elapsed time.
   Set<int> Function()? getClosedZones;
@@ -180,15 +183,19 @@ class LocationService {
             return;
           }
 
-          int? zone;
           final face = map!.graph.pointInFace(imageOffset);
-          zone = face?.faceID;
+          int? zone = face?.faceID;
 
           bool revealed = true;
           if (role == 'runner') {
-            final closedZones = getClosedZones?.call() ?? {};
-            // Runner is hidden only if in a zone that is still open
-            revealed = zone == null || closedZones.contains(zone);
+            if (inGracePeriod) {
+              // During grace period, runners are always hidden
+              revealed = false;
+            } else {
+              final closedZones = getClosedZones?.call() ?? {};
+              // Runner is hidden only if in a zone that is still open
+              revealed = zone == null || closedZones.contains(zone);
+            }
           }
 
           gameSocketService.sendLocation(
@@ -223,6 +230,7 @@ class LocationService {
     _retryCount = 0;
     _socketConnected = false;
     getClosedZones = null;
+    inGracePeriod = false;
     _log('Location tracking stopped');
   }
 

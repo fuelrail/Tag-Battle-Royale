@@ -267,11 +267,13 @@ class GameSocketService {
   void startGame(Map<String, dynamic> mapJson, {
     required List<int> faceOrder,
     required int closureIntervalMs,
+    required int gracePeriodMs,
   }) {
     _socket.emit('game:start', {
       'map': mapJson,
       'faceOrder': faceOrder,
       'closureIntervalMs': closureIntervalMs,
+      'gracePeriodMs': gracePeriodMs,
     });
   }
 

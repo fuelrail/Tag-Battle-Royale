@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/game_socket_service.dart';
@@ -56,28 +57,47 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   MapFile? _receivedMap;
   List<int>? _faceOrder;       // ordered faceIDsr
   int _closureMinutes = 15;    // default 15
+  int _gracePeriodSeconds = 90;
   final TextEditingController _closureMinutesController =
       TextEditingController(text: '15');
+  final TextEditingController _gracePeriodController =
+      TextEditingController(text: '90');
 
   bool _gameStarted = false;
   DateTime? _gameStartedAt;
   List<int> _activeFaceOrder = [];   // received from server
   int _activeClosureIntervalMs = 15 * 60 * 1000;
+  int _activeGracePeriodMs = 90 * 1000;
   final Map<String, PlayerLocationInfo> _playerLocations = {};
+
+  // Grace period countdown
+  Timer? _graceTimer;
+  int _graceSecondsRemaining = 0;
 
   bool get isHost => widget.isHostOverride ?? (widget.role == ConnectionRole.host);
   bool get _isReconnecting => widget.playerId != null;
+  
   String get _myRole {
     final me = _players.where((p) => p.id == _socket?.currentPlayerId).firstOrNull;
     return me?.role ?? 'runner';
   }
+  
   // Compute which zones have closed based on elapsed time since game start.
   Set<int> get _closedZones {
     if (_gameStartedAt == null || _activeFaceOrder.isEmpty) return {};
-    final elapsed = DateTime.now().difference(_gameStartedAt!).inMilliseconds;
+    // Zone closures start after grace period
+    final elapsed = DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs;
+    if (elapsed <= 0) return {};
     final closedCount = elapsed ~/ _activeClosureIntervalMs;
     return _activeFaceOrder.take(closedCount).toSet();
   }
+
+  bool get _inGracePeriod {
+    if (_gameStartedAt == null || _activeGracePeriodMs <= 0) return false;
+    final elapsed = DateTime.now().difference(_gameStartedAt!).inMilliseconds;
+    return elapsed < _activeGracePeriodMs;
+  }
+
   
   @override
   void initState() {
@@ -117,6 +137,37 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
           _addLog('Connection timed out');
         }
       }
+    });
+  }
+
+  // --- Grace period timer ---
+
+  void _startGraceCountdown() {
+    _graceTimer?.cancel();
+    _location?.inGracePeriod = _inGracePeriod;
+
+    if (!_inGracePeriod) {
+      _graceSecondsRemaining = 0;
+      return;
+    }
+
+    final elapsed = DateTime.now().difference(_gameStartedAt!).inMilliseconds;
+    _graceSecondsRemaining = ((_activeGracePeriodMs - elapsed) / 1000).ceil();
+
+    _graceTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) {
+        _graceTimer?.cancel();
+        return;
+      }
+      setState(() {
+        _graceSecondsRemaining--;
+        if (_graceSecondsRemaining <= 0) {
+          _graceSecondsRemaining = 0;
+          _graceTimer?.cancel();
+          _graceTimer = null;
+          _location?.inGracePeriod = false;
+        }
+      });
     });
   }
 
@@ -212,6 +263,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       // Map and role will be set when the map arrives
       _updateLocationRole();
       _location?.getClosedZones = () => _closedZones;
+      _startGraceCountdown();
       // Tracking will start when the map arrives
     };
 
@@ -271,6 +323,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       // Set role and start tracking
       _updateLocationRole();
       _location?.getClosedZones = () => _closedZones;
+      _startGraceCountdown();
       if (_location?.map != null) {
         _location?.startTracking();
       }
@@ -288,6 +341,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         _receivedMap = MapFile.fromJson(mapJson);
         _activeFaceOrder = List<int>.from(data['faceOrder']);
         _activeClosureIntervalMs = data['closureIntervalMs'];
+        _activeGracePeriodMs = data['gracePeriodMs'];
 
         _location?.map = _receivedMap;
         _socket!.hasMap = true;
@@ -303,7 +357,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
           _socket!.confirmMapReceived();
           _addLog('Map received and confirmed');
           _addLog('Face order: ${_activeFaceOrder.toString()} zones, '
-            'closure interval: ${_activeClosureIntervalMs ~/ 1000}s');
+            'closure interval: ${_activeClosureIntervalMs ~/ 1000}s, '
+            'grace period: ${_activeGracePeriodMs ~/ 1000}s');
           // Save session for host and joiners for active game
           GameSession.save(
             gameId: _socket!.currentGameId!,
@@ -315,7 +370,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         } else {
           _addLog('Map received');
           _addLog('Face order: ${_activeFaceOrder.length} zones, '
-            'closure interval: ${_activeClosureIntervalMs ~/ 1000}s');
+            'closure interval: ${_activeClosureIntervalMs ~/ 1000}s, '
+            'grace period: ${_activeGracePeriodMs ~/ 1000}s');
         }
         setState(() {}); // Rebuild to show map tab
       } catch (e) {
@@ -545,6 +601,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   @override
   void dispose() {
     _unhookCallbacks();
+    _graceTimer?.cancel();
     // Only fully leave if the game hasn't started (lobby phase).
     // If the game has started, just disconnect the socket, the server
     // will mark us as disconnected so we can reconnect.
@@ -555,12 +612,69 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _socket?.disconnect();
     _playersScrollController.dispose();
     _closureMinutesController.dispose();
+    _gracePeriodController.dispose();
     super.dispose();
+  }
+
+  // --- Grace period banner ---
+
+  Widget? _buildGraceBanner() {
+    if (!_gameStarted || !_inGracePeriod || _graceSecondsRemaining <= 0) return null;
+
+    final isRunner = _myRole == 'runner';
+    final color = isRunner ? Colors.blue : Colors.red;
+    final subtitle = isRunner ? 'Run!' : 'Stay in place!';
+    final minutes = _graceSecondsRemaining ~/ 60;
+    final seconds = _graceSecondsRemaining % 60;
+    final timeStr = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+      color: color,
+      child: Column(
+        children: [
+          Text(
+            'Grace Period: $timeStr',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // --- Sub Tab Builders for Game Tab ---
 
   Widget _buildRulesSubTab() {
+    // Non-host can't see rules until game starts
+    if (!isHost && !_gameStarted) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.lock_outline, size: 48, color: Colors.grey),
+            SizedBox(height: 12),
+            Text('Rules will be visible when the game starts',
+                style: TextStyle(color: Colors.grey)),
+          ],
+        ),
+      );
+    }
+
+    final enabled = isHost && !_gameStarted;
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -577,7 +691,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                   controller: _closureMinutesController,
                   keyboardType: TextInputType.number,
                   textAlign: TextAlign.center,
-                  enabled: isHost && !_gameStarted,
+                  enabled: enabled,
                   onChanged: (v) {
                     final m = int.tryParse(v);
                     if (m != null && m > 0) {
@@ -592,6 +706,35 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                 ),
               ),
               const Text(' minutes'),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Text('Grace Period', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Text('Grace period: '),
+              SizedBox(
+                width: 60,
+                child: TextField(
+                  controller: _gracePeriodController,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  enabled: enabled,
+                  onChanged: (v) {
+                    final s = int.tryParse(v);
+                    if (s != null && s > 0) {
+                      _gracePeriodSeconds = s;
+                    }
+                  },
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const Text(' seconds'),
             ],
           ),
         ],
@@ -899,6 +1042,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                                 _selectedMap!.toJson(),
                                 faceOrder: _faceOrder!,
                                 closureIntervalMs: _closureMinutes * 60 * 1000,
+                                gracePeriodMs: _gracePeriodSeconds * 1000,
                               );
                               _addLog('Starting game, sending map to players…');
                             },
@@ -951,6 +1095,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     // During active game, show map viewer
     if (_receivedMap != null) {
       final amRunner = _myRole == 'runner';
+      final showCaughtButton = amRunner && !_inGracePeriod;
       return Stack(
         children: [
           MapViewer(map: _receivedMap!, showAppBar: false),
@@ -962,6 +1107,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
               child: SafeArea(
                 top: false,
                 child: _CaughtButton(
+                  enabled: showCaughtButton,
                   onCaught: () {
                     final myId = _socket?.currentPlayerId;
                     if (myId != null) {
@@ -1004,6 +1150,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         gameTabBuilder: _buildGameTab,
         // Host gets map tab in lobby, everyone gets it during game
         mapTabBuilder: (isHost || _gameStarted) ? _buildMapTab : null,
+        banner: _buildGraceBanner(),
       ),
     );
   }
@@ -1012,8 +1159,9 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 // --- Caught Button Widget ---
 
 class _CaughtButton extends StatefulWidget {
-  const _CaughtButton({required this.onCaught});
+  const _CaughtButton({required this.onCaught, this.enabled = true});
   final VoidCallback onCaught;
+  final bool enabled;
 
   @override
   State<_CaughtButton> createState() => _CaughtButtonState();
@@ -1044,6 +1192,7 @@ class _CaughtButtonState extends State<_CaughtButton>
   }
 
   void _onDown(PointerDownEvent _) {
+    if (!widget.enabled) return;
     _controller.forward(from: 0);
   }
 
@@ -1055,6 +1204,8 @@ class _CaughtButtonState extends State<_CaughtButton>
 
   @override
   Widget build(BuildContext context) {
+    final dimmed = !widget.enabled;
+
     return Listener(
       onPointerDown: _onDown,
       onPointerUp: _onUp,
@@ -1062,35 +1213,38 @@ class _CaughtButtonState extends State<_CaughtButton>
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, child) {
-          return Container(
-            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.errorContainer,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: CircularProgressIndicator(
-                    value: _controller.value,
-                    strokeWidth: 3,
-                    color: Theme.of(context).colorScheme.error,
-                    backgroundColor: Theme.of(context).colorScheme.error.withValues(alpha: 0.2),
+          return Opacity(
+            opacity: dimmed ? 0.4 : 1.0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      value: _controller.value,
+                      strokeWidth: 3,
+                      color: Theme.of(context).colorScheme.error,
+                      backgroundColor: Theme.of(context).colorScheme.error.withValues(alpha: 0.2),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  "I've been caught (hold)",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  const SizedBox(width: 12),
+                  Text(
+                    "I've been caught (hold)",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Theme.of(context).colorScheme.onErrorContainer,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },

@@ -5,7 +5,7 @@
 //   game:join           { gameId, playerName }
 //   game:rejoin         { gameId, playerId, hasMap }
 //   game:leave          (no payload)
-//   game:start          { map, faceOrder, closureIntervalMs }
+//   game:start          { map, faceOrder, closureIntervalMs, gracePeriodMs }
 //   game:map:received   (no payload)
 //   player:role         { playerId, role }
 //
@@ -23,7 +23,7 @@
 //   player:reconnected     { playerId, playerName, players }
 //   player:disconnected    { playerId, playerName, players }
 //   player:role:updated    { playerId, role }
-//   game:map               { map, faceOrder, closureIntervalMs }
+//   game:map               { map, faceOrder, closureIntervalMs, gracePeriodMs }
 //   game:started           { gameId, startedAt }
 //   game:disbanded         { reason }
 //   location:broadcast     (per-socket filtered payload)
@@ -165,12 +165,14 @@ function registerGameHandlers(io, socket, gameManager) {
           map: game.mapData,
           faceOrder: game.faceOrder,
           closureIntervalMs: game.closureIntervalMs,
+          gracePeriodMs: game.gracePeriodMs,
         });
         console.log(`[game:rejoin] Sent map data to reconnecting player "${player.name} (${player.id})"`);
       }
 
       // Restart broadcasting if it was stopped due to all players disconnecting
-      if (game.status === "active" && !game._broadcastTimer) {
+      // and grace period is over
+      if (game.status === "active" && !game._broadcastTimer && !game.inGracePeriod) {
         game.startBroadcasting(makeBroadcastCallback(io, game));
         console.log(`[game:rejoin] Restarted broadcast for game ${game.id}`);
       }
@@ -272,12 +274,18 @@ function registerGameHandlers(io, socket, gameManager) {
       return emitError(socket, callback, "game:start", "Closure interval is required");
     }
 
+    const gracePeriodMs = data.gracePeriodMs;
+    if (typeof gracePeriodMs !== "number" || gracePeriodMs <= 0) {
+      return emitError(socket, callback, "game:start", "Grace period is required");
+    }
+
     console.log(`[game:start] Game ${game.id} starting with ${game.getConnectedPlayerCount()} connected players (triggered by socket ${socket.id})`);
 
     // Store map and enter starting phase
     game.mapData = mapData;
     game.faceOrder = faceOrder;
     game.closureIntervalMs = closureIntervalMs;
+    game.gracePeriodMs = gracePeriodMs;
     game.mapConfirmations = new Set();
     game.status = "starting";
 
@@ -286,6 +294,7 @@ function registerGameHandlers(io, socket, gameManager) {
       map: mapData,
       faceOrder: game.faceOrder,
       closureIntervalMs: game.closureIntervalMs,
+      gracePeriodMs: game.gracePeriodMs,
     });
     console.log(`[game:start] Map sent to all players in game ${game.id}, waiting for confirmations`);
 

@@ -14,12 +14,14 @@ class Game {
     this.staleThresholdMs = config.staleThresholdMs || 12000; // no update = stale
     this._broadcastTimer = null;
     this._broadcastCallback = null; // set by GameManager when game starts
+    this._graceTimer = null;
 
     // Map transfer
     this.mapData = null;
     this.mapConfirmations = new Set(); // playerIds that confirmed receival
     this.faceOrder = [];        // ordered list of faceIDs
     this.closureIntervalMs = null;
+    this.gracePeriodMs = null;
   }
 
   // --- Players ---
@@ -77,6 +79,13 @@ class Game {
       }
     }
     return true;
+  }
+
+  // --- Grace period ---
+
+  inGracePeriod() {
+    if (!this.startedAt || !this.gracePeriodMs || this.gracePeriodMs <= 0) return false;
+    return (Date.now() - this.startedAt) < this.gracePeriodMs;
   }
 
   // --- Locations for broadcasting ---
@@ -178,6 +187,10 @@ class Game {
   }
 
   stopBroadcasting() {
+    if (this._graceTimer) {
+      clearTimeout(this._graceTimer);
+      this._graceTimer = null;
+    }
     if (this._broadcastTimer) {
       clearInterval(this._broadcastTimer);
       this._broadcastTimer = null;
@@ -189,7 +202,18 @@ class Game {
   start(broadcastCallback) {
     this.status = "active";
     this.startedAt = Date.now();
-    this.startBroadcasting(broadcastCallback);
+
+    // Delay broadcasting until grace period is over
+    if (this.gracePeriodMs && this.gracePeriodMs > 0) {
+      console.log(`[Game] Grace period: ${this.gracePeriodMs / 1000}s, broadcasting delayed`);
+      this._graceTimer = setTimeout(() => {
+        this._graceTimer = null;
+        console.log(`[Game] Grace period over for game ${this.id}, starting broadcasts`);
+        this.startBroadcasting(broadcastCallback);
+      }, this.gracePeriodMs);
+    } else {
+      this.startBroadcasting(broadcastCallback);
+    }
   }
 
   finish() {
