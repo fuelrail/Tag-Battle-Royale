@@ -26,12 +26,14 @@
 //   game:map               { map, faceOrder, closureIntervalMs, gracePeriodMs }
 //   game:started           { gameId, startedAt }
 //   game:disbanded         { reason }
+//   chat:history           { channel, messages }
 //   location:broadcast     (per-socket filtered payload)
 //   error                  { event, message }
 //
 
+const { sendChatHistory } = require("./chatHandlers");
+
 // Emits per-socket payloads.
-// perPlayerPayloads is { socketId: filteredPayload }
 function makeBroadcastCallback(io, game) {
   return (gId, perPlayerPayloads) => {
     // Log status counts from the actual player list
@@ -115,6 +117,10 @@ function registerGameHandlers(io, socket, gameManager) {
       // Tell the new player they're in
       callback({ ok: true, game: game.toJSON(), playerId: player.id });
 
+      // Send existing chat history (lobby "all" messages because we know 
+      // the game is in lobby phase)
+      sendChatHistory(socket, game, ["all"]);
+
       // Tell everyone else in the game
       socket.to(normalizedId).emit("player:joined", {
         playerId: player.id,
@@ -159,6 +165,13 @@ function registerGameHandlers(io, socket, gameManager) {
 
       // Tell the reconnected player they're back
       callback({ ok: true, game: game.toJSON(), playerId: player.id });
+
+      // Send chat history: "all" always, plus their role channel if game is active
+      const channels = ["all"];
+      if (game.status !== "waiting") {
+        channels.push(player.role);
+      }
+      sendChatHistory(socket, game, channels);
 
       if (game.mapData && !hasMap) {
         socket.emit("game:map", {
@@ -353,6 +366,7 @@ function registerGameHandlers(io, socket, gameManager) {
       return emitError(socket, callback, "player:role", "Player not found");
     }
 
+    const oldRole = targetPlayer.role;
     targetPlayer.role = role;
     console.log(`[player:role] ${targetPlayer.name} (${targetPlayer.id}) role changed to ${role} in game ${game.id}`);
 
@@ -363,6 +377,11 @@ function registerGameHandlers(io, socket, gameManager) {
       playerId: targetPlayer.id,
       role: role,
     });
+
+    // Send the new role's chat history to the player who switched
+    if (oldRole !== role && game.status !== "waiting" && targetPlayer.connected) {
+      sendChatHistory(io.sockets.sockets.get(targetPlayer.socketId), game, [role]);
+    }
   });
 
   // Re-check map confirmations if a player disconnects during starting phase

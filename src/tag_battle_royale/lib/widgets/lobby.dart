@@ -9,12 +9,14 @@ class PlayerData {
   final String name;
   String role; // runner or chaser
   bool isHost;
+  bool connected;
 
   PlayerData({
     required this.id,
     required this.name,
     this.role = 'runner',
     this.isHost = false,
+    this.connected = true,
   });
 
   // Host = purple, Chaser = red, Runner = black.
@@ -54,18 +56,26 @@ class LobbyLayout extends StatefulWidget {
     required this.gameTabBuilder,
     this.mapTabBuilder,
     this.banner,
+    this.gameStarted = false,
+    this.myRole = 'runner',
+    required this.activeChannel,
+    required this.onChannelChanged,
   });
 
   final String title;
   final bool isConnected;
   final List<PlayerData> players;
-  final List<ChatMessage> chatMessages;
+  final Map<String, List<ChatMessage>> chatMessages; // { channel: messages }
   final String? currentPlayerId;
   final Map<String, Color> playerColourMap; // { playerId: Color }
   final void Function(String text) onSendChat;
   final Widget Function(BuildContext context) gameTabBuilder;
   final Widget Function(BuildContext context)? mapTabBuilder;
   final Widget? banner;
+  final bool gameStarted;
+  final String myRole;
+  final String activeChannel;
+  final void Function(String channel) onChannelChanged;
 
   @override
   State<LobbyLayout> createState() => LobbyLayoutState();
@@ -77,13 +87,17 @@ class LobbyLayoutState extends State<LobbyLayout> {
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
 
+  List<ChatMessage> get _activeMessages =>
+      widget.chatMessages[widget.activeChannel] ?? [];
+
   // When state changes this is called, check last message count with current,
   // if there is a difference, scroll chat to bottom
   @override
   void didUpdateWidget(LobbyLayout oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.chatMessages.length > _lastMessageCount) {
-      _lastMessageCount = widget.chatMessages.length;
+    final newCount = _activeMessages.length;
+    if (newCount > _lastMessageCount) {
+      _lastMessageCount = newCount;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_chatScrollController.hasClients) {
           _chatScrollController.animateTo(
@@ -132,21 +146,61 @@ class LobbyLayoutState extends State<LobbyLayout> {
     );
   }
 
-  Widget _buildPlayersTab() {
+  Widget _buildChannelSelector() {
+    final roleLabel = widget.myRole == 'chaser' ? 'Chaser' : 'Runner';
+    final roleChannelEnabled = widget.gameStarted;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ChannelTab(
+              label: 'All',
+              selected: widget.activeChannel == 'all',
+              enabled: true,
+              onTap: () => widget.onChannelChanged('all'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _ChannelTab(
+              label: roleLabel,
+              selected: widget.activeChannel == widget.myRole,
+              enabled: roleChannelEnabled,
+              onTap: roleChannelEnabled
+                  ? () => widget.onChannelChanged(widget.myRole)
+                  : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChatTab() {
+    final visiblePlayers = widget.activeChannel == 'all'
+      ? widget.players
+      : widget.players.where((p) => p.role == widget.activeChannel).toList();
+    final messages = _activeMessages;
+
     return Column(
       children: [
+        // Channel selector
+        _buildChannelSelector(),
+
         // Player chips
         SizedBox(
           height: 64,
-          child: widget.players.isEmpty
+          child: visiblePlayers.isEmpty
               ? const Center(
                   child: Text('No players yet', style: TextStyle(color: Colors.grey)))
               : ListView.builder(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  itemCount: widget.players.length,
+                  itemCount: visiblePlayers.length,
                   itemBuilder: (_, i) {
-                    final player = widget.players[i];
+                    final player = visiblePlayers[i];
                     final colour = _getPlayerColour(player.id);
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
@@ -174,7 +228,9 @@ class LobbyLayoutState extends State<LobbyLayout> {
                               padding: const EdgeInsets.symmetric(horizontal: 12),
                               child: Text(
                                 player.name,
-                                style: TextStyle(color: player.nameColour),
+                                style: TextStyle(
+                                  color: player.connected ? player.nameColour : Colors.grey,
+                                ),
                               ),
                             ),
                           ],
@@ -189,16 +245,16 @@ class LobbyLayoutState extends State<LobbyLayout> {
 
         // Chat messages
         Expanded(
-          child: widget.chatMessages.isEmpty
+          child: messages.isEmpty
               ? const Center(
                   child: Text('No messages yet',
                       style: TextStyle(color: Colors.grey)))
               : ListView.builder(
                   controller: _chatScrollController,
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                  itemCount: widget.chatMessages.length,
+                  itemCount: messages.length,
                   itemBuilder: (_, i) {
-                    final msg = widget.chatMessages[i];
+                    final msg = messages[i];
                     final colour = _getPlayerColour(msg.playerId);
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 4),
@@ -299,7 +355,7 @@ class LobbyLayoutState extends State<LobbyLayout> {
               index: _currentTab,
               children: [
                 widget.mapTabBuilder?.call(context) ?? _buildDefaultMapTab(),
-                _buildPlayersTab(),
+                _buildChatTab(),
                 widget.gameTabBuilder(context),
               ],
             ),
@@ -316,9 +372,9 @@ class LobbyLayoutState extends State<LobbyLayout> {
             label: 'Map',
           ),
           NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
-            label: 'Players',
+            icon: Icon(Icons.chat_bubble_outline),
+            selectedIcon: Icon(Icons.chat_bubble),
+            label: 'Chat',
           ),
           NavigationDestination(
             icon: Icon(Icons.sports_esports_outlined),
@@ -326,6 +382,54 @@ class LobbyLayoutState extends State<LobbyLayout> {
             label: 'Game',
           ),
         ],
+      ),
+    );
+  }
+}
+
+
+// --- Channel tab button ---
+
+class _ChannelTab extends StatelessWidget {
+  const _ChannelTab({
+    required this.label,
+    required this.selected,
+    required this.enabled,
+    this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: !enabled
+              ? Colors.grey.shade300
+              : selected
+                  ? Theme.of(context).colorScheme.primaryContainer
+                  : Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+              color: !enabled
+                  ? Colors.grey.shade500
+                  : selected
+                      ? Theme.of(context).colorScheme.onPrimaryContainer
+                      : Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+        ),
       ),
     );
   }
