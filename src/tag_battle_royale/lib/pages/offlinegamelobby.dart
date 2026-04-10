@@ -157,7 +157,8 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   final List<String> _log = [];
   bool _showLogs = false; // toggle between connection info and logs in game tab
 
-    MapFile? _selectedMap;
+  MapFile? _selectedMap;
+  List<int>? _faceOrder;       // ordered faceIDsr
 
   @override
   void initState() {
@@ -970,14 +971,23 @@ String _displayForUser(String userName) {
       canCreateMaps: false,
       selectedMapName: _selectedMap?.mapName,
       selectedMapId: _selectedMap?.id,
-      onMapSelected: (map) {
-        setState(() => _selectedMap = map);
-        if (map != null) {
-          _addLog('Selected map: ${map.id} ${map.mapName}');
-        }
-      },
-    );
-  }
+        onMapSelected: (map, faces) {
+          setState(() {
+            _selectedMap = map;
+            if (faces != null) {
+              _faceOrder = faces.map<int>((f) => f.faceID as int).toList();
+            } else {
+              _faceOrder = null;
+            }
+          });
+          if (map != null) {
+            _addLog('Selected map: ${map.mapName}');
+          } else {
+            _addLog('Map failed to select');
+          };
+        },
+      );
+    }
 
   @override
   Widget build(BuildContext context) {

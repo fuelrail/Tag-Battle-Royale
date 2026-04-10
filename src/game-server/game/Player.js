@@ -9,6 +9,7 @@ class Player {
     this.location = null;
     this.lastUpdateAt = 0; // last location update time
     this.connectedAt = Date.now();
+    this.revealed = false; // whether chasers can see this runner
     this.connected = true;
     this.disconnectedAt = null; // timestamp of last disconnect
   }
@@ -22,6 +23,7 @@ class Player {
     };
     // Only runners send zone info, chasers leave it null
     this.zone = data.zone ?? null;
+    this.revealed = data.revealed ?? false;
     this.lastUpdateAt = now;
   }
 

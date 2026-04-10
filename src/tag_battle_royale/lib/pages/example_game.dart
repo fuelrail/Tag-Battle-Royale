@@ -14,14 +14,14 @@ import '../util/faceDetection/face_detection_graph.dart';
 import '../util/player.dart';
 
 class ExampleGame extends StatefulWidget {
-  const ExampleGame({
+  ExampleGame({
     super.key,
     required this.map,
-    required this.player,
   });
 
   final MapFile map;
-  final Player player;
+  final Players players = Players();
+  final String playerID = "1";
 
   @override
   State<ExampleGame> createState() => _ExampleGameState();
@@ -43,18 +43,19 @@ class _ExampleGameState extends State<ExampleGame> {
   /// faceID -> closing time in seconds
   final Map<int, double> _zoneClosings = {};
 
-  final ValueNotifier<Player?> _userNotifier = ValueNotifier(null);
-  final ValueNotifier<List<Player>> _otherPlayersNotifier = ValueNotifier([]);
   final ValueNotifier<Face?> _currentZoneNotifier = ValueNotifier(null);
   final ValueNotifier<List<Face>> _closedFacesNotifier = ValueNotifier([]);
 
   @override
   void initState(){
     super.initState();
+    widget.players.addPlayer(Player(id:"1", colour: Color.fromARGB(0, 12, 186, 192), name:"Player"));
+    final player = widget.players.getPlayer(widget.playerID);
+    if(player == null){return;}
     _replay = Replay(
-      playerID: widget.player.id,
-      playerName: widget.player.name,
-      colour: widget.player.colour,
+      playerID: player.id,
+      playerName: player.name,
+      colour: player.colour,
       timer: gameTimer,
     );
     _init();
@@ -85,16 +86,8 @@ class _ExampleGameState extends State<ExampleGame> {
 
           final point = _latLngToImage(pos);
           _replay.add(point);
-
           final currentFace = widget.map.graph.pointInFace(point);
-
-          _userNotifier.value = Player(
-            id: widget.player.id,
-            position: point,
-            colour: widget.player.colour,
-            name: widget.player.name,
-          );
-
+          widget.players.updatePlayerPosition(widget.playerID, point);
           _currentZoneNotifier.value = currentFace;
         } catch (_){}
       },
@@ -188,8 +181,6 @@ class _ExampleGameState extends State<ExampleGame> {
     _locationTimer?.cancel();
     _zoneCloseTimer?.cancel();
     _replay.stop();
-    _userNotifier.dispose();
-    _otherPlayersNotifier.dispose();
     _currentZoneNotifier.dispose();
     _closedFacesNotifier.dispose();
     super.dispose();
@@ -222,8 +213,7 @@ class _ExampleGameState extends State<ExampleGame> {
         map: widget.map,
         currentZoneNotifier: _currentZoneNotifier,
         closedFacesNotifier: _closedFacesNotifier,
-        userNotifier: _userNotifier,
-        otherPlayersNotifier: _otherPlayersNotifier,
+        players: widget.players,
         showPlayerNames: false,
       ),
     );

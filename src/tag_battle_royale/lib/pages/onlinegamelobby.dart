@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/game_socket_service.dart';
@@ -54,17 +55,50 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   MapFile? _selectedMap; // host only
   bool _isStarting = false;
   MapFile? _receivedMap;
+  List<int>? _faceOrder;       // ordered faceIDsr
+  int _closureMinutes = 15;    // default 15
+  int _gracePeriodSeconds = 90;
+  final TextEditingController _closureMinutesController =
+      TextEditingController(text: '15');
+  final TextEditingController _gracePeriodController =
+      TextEditingController(text: '90');
 
   bool _gameStarted = false;
+  DateTime? _gameStartedAt;
+  List<int> _activeFaceOrder = [];   // received from server
+  int _activeClosureIntervalMs = 15 * 60 * 1000;
+  int _activeGracePeriodMs = 90 * 1000;
   final Map<String, PlayerLocationInfo> _playerLocations = {};
+
+  // Grace period countdown
+  Timer? _graceTimer;
+  int _graceSecondsRemaining = 0;
 
   bool get isHost => widget.isHostOverride ?? (widget.role == ConnectionRole.host);
   bool get _isReconnecting => widget.playerId != null;
+  
   String get _myRole {
     final me = _players.where((p) => p.id == _socket?.currentPlayerId).firstOrNull;
     return me?.role ?? 'runner';
   }
+  
+  // Compute which zones have closed based on elapsed time since game start.
+  Set<int> get _closedZones {
+    if (_gameStartedAt == null || _activeFaceOrder.isEmpty) return {};
+    // Zone closures start after grace period
+    final elapsed = DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs;
+    if (elapsed <= 0) return {};
+    final closedCount = elapsed ~/ _activeClosureIntervalMs;
+    return _activeFaceOrder.take(closedCount).toSet();
+  }
 
+  bool get _inGracePeriod {
+    if (_gameStartedAt == null || _activeGracePeriodMs <= 0) return false;
+    final elapsed = DateTime.now().difference(_gameStartedAt!).inMilliseconds;
+    return elapsed < _activeGracePeriodMs;
+  }
+
+  
   @override
   void initState() {
     super.initState();
@@ -92,16 +126,48 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     // Timeout if we can't connect within 15 seconds
     Future.delayed(const Duration(seconds: 15), () {
       if (mounted && _status == 'Disconnected') {
-        setState(() => _status = 'Error');
-        _addLog('Connection timed out');
-        // If reconnecting, auto-pop after showing the error
+        // If reconnecting, pop after showing the error
         if (_isReconnecting) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Connection timed out')),
           );
           Navigator.popUntil(context, (route) => route.isFirst);
+        } else {
+          setState(() => _status = 'Error');
+          _addLog('Connection timed out');
         }
       }
+    });
+  }
+
+  // --- Grace period timer ---
+
+  void _startGraceCountdown() {
+    _graceTimer?.cancel();
+    _location?.inGracePeriod = _inGracePeriod;
+
+    if (!_inGracePeriod) {
+      _graceSecondsRemaining = 0;
+      return;
+    }
+
+    final elapsed = DateTime.now().difference(_gameStartedAt!).inMilliseconds;
+    _graceSecondsRemaining = ((_activeGracePeriodMs - elapsed) / 1000).ceil();
+
+    _graceTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) {
+        _graceTimer?.cancel();
+        return;
+      }
+      setState(() {
+        _graceSecondsRemaining--;
+        if (_graceSecondsRemaining <= 0) {
+          _graceSecondsRemaining = 0;
+          _graceTimer?.cancel();
+          _graceTimer = null;
+          _location?.inGracePeriod = false;
+        }
+      });
     });
   }
 
@@ -174,10 +240,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
     _socket!.onRejoined = (data) {
       if (!mounted) return;
+
       setState(() {
         _gameId = data['game']?['id'] ?? _gameId;
         _hostId = data['game']?['hostId']?.toString() ?? _hostId;
         _gameStarted = true;
+        _gameStartedAt = DateTime.fromMillisecondsSinceEpoch(data['game']?['startedAt']);
         if (data['game']?['players'] != null) {
           _updatePlayerList(data['game']['players']);
         }
@@ -192,9 +260,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         gameStarted: true,
       );
 
-      // Map and role will be set when game:map arrives
+      // Map and role will be set when the map arrives
       _updateLocationRole();
-      _location?.startTracking();
+      _location?.getClosedZones = () => _closedZones;
+      _startGraceCountdown();
+      // Tracking will start when the map arrives
     };
 
     _socket!.onPlayerJoined = (data) {
@@ -226,8 +296,37 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
     _socket!.onGameStarted = (data) {
       if (!mounted) return;
-      _addLog('Game started!');
-      _onGameStarted();
+      
+      setState(() {
+        _isStarting = false;
+        _gameStarted = true;
+        _gameStartedAt = DateTime.fromMillisecondsSinceEpoch(data['startedAt']);
+      });
+      _addLog('Game start time: $_gameStartedAt');
+      _addLog('Closed zones: ${_closedZones.length}');
+
+      if (isHost) {
+        _receivedMap = _selectedMap;
+        _location?.map = _selectedMap;
+        _socket!.hasMap = true;
+      }
+
+      // Save session for reconnection
+      GameSession.save(
+        gameId: _socket!.currentGameId!,
+        playerId: _socket!.currentPlayerId!,
+        playerName: widget.playerName,
+        isHost: isHost,
+        gameStarted: true,
+      );
+
+      // Set role and start tracking
+      _updateLocationRole();
+      _location?.getClosedZones = () => _closedZones;
+      _startGraceCountdown();
+      if (_location?.map != null) {
+        _location?.startTracking();
+      }
     };
 
     _socket!.onChatMessage = (message) {
@@ -235,29 +334,44 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       setState(() => _chatMessages.add(message));
     };
 
-    _socket!.onMapData = (mapJson) {
+    _socket!.onMapData = (data) {
       if (!mounted) return;
       try {
+        final mapJson = data['map'] as Map<String, dynamic>;
         _receivedMap = MapFile.fromJson(mapJson);
+        _activeFaceOrder = List<int>.from(data['faceOrder']);
+        _activeClosureIntervalMs = data['closureIntervalMs'];
+        _activeGracePeriodMs = data['gracePeriodMs'];
+
+        _location?.map = _receivedMap;
         _socket!.hasMap = true;
 
-        // Give the map to LocationService for coord conversion and zone detection
-        _location?.map = _receivedMap;
+        if (_gameStarted && !_location!.isTracking) {
+          _updateLocationRole();
+          _location?.getClosedZones = () => _closedZones;
+          _location?.startTracking();
+        }
 
         // Only confirm during the starting phase (not on rejoin)
         if (!_gameStarted) {
           _socket!.confirmMapReceived();
-        _addLog('Map received and confirmed');
-        // Save session for host and joiners for active game
-        GameSession.save(
-          gameId: _socket!.currentGameId!,
-          playerId: _socket!.currentPlayerId!,
-          playerName: widget.playerName,
-          isHost: isHost,
-          gameStarted: true,
+          _addLog('Map received and confirmed');
+          _addLog('Face order: ${_activeFaceOrder.toString()} zones, '
+            'closure interval: ${_activeClosureIntervalMs ~/ 1000}s, '
+            'grace period: ${_activeGracePeriodMs ~/ 1000}s');
+          // Save session for host and joiners for active game
+          GameSession.save(
+            gameId: _socket!.currentGameId!,
+            playerId: _socket!.currentPlayerId!,
+            playerName: widget.playerName,
+            isHost: isHost,
+            gameStarted: true,
           );
         } else {
           _addLog('Map received');
+          _addLog('Face order: ${_activeFaceOrder.length} zones, '
+            'closure interval: ${_activeClosureIntervalMs ~/ 1000}s, '
+            'grace period: ${_activeGracePeriodMs ~/ 1000}s');
         }
         setState(() {}); // Rebuild to show map tab
       } catch (e) {
@@ -267,6 +381,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   
     _socket!.onLocationBroadcast = (players) {
       if (!mounted) return;
+      _addLog('Broadcast: ${players.entries.map((e) {
+        final p = e.value;
+        final pos = p.x != null ? '(${p.x!.toStringAsFixed(1)}, ${p.y!.toStringAsFixed(1)})' : 'no pos';
+        return '${p.playerName}(${p.role}) $pos ${p.status}';
+      }).join(', ')}');
       setState(() {
         _playerLocations
           ..clear()
@@ -351,6 +470,14 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   // --- Role switching ---
 
   void _switchRole(String playerId) {
+    if (playerId == _hostId) return;
+
+    // Self-switches (caught button) skip confirmation popup
+    if (playerId == _socket?.currentPlayerId) {
+      _doRoleSwitch(playerId);
+      return;
+    }
+
     if (_gameStarted) {
       _confirmRoleSwitch(playerId);
     } else {
@@ -404,26 +531,6 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   }
 
   // ---
-
-  void _onGameStarted() {
-    setState(() {
-      _isStarting = false;
-      _gameStarted = true;
-    });
-
-    // Save session for reconnection
-    GameSession.save(
-      gameId: _socket!.currentGameId!,
-      playerId: _socket!.currentPlayerId!,
-      playerName: widget.playerName,
-      isHost: isHost,
-      gameStarted: true,
-    );
-
-    // Set role and start tracking
-    _updateLocationRole();
-    _location?.startTracking();
-  }
 
   void _addLog(String message) {
     if (!mounted) return;
@@ -494,6 +601,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   @override
   void dispose() {
     _unhookCallbacks();
+    _graceTimer?.cancel();
     // Only fully leave if the game hasn't started (lobby phase).
     // If the game has started, just disconnect the socket, the server
     // will mark us as disconnected so we can reconnect.
@@ -503,19 +611,132 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _location?.dispose();
     _socket?.disconnect();
     _playersScrollController.dispose();
+    _closureMinutesController.dispose();
+    _gracePeriodController.dispose();
     super.dispose();
+  }
+
+  // --- Grace period banner ---
+
+  Widget? _buildGraceBanner() {
+    if (!_gameStarted || !_inGracePeriod || _graceSecondsRemaining <= 0) return null;
+
+    final isRunner = _myRole == 'runner';
+    final color = isRunner ? Colors.blue : Colors.red;
+    final subtitle = isRunner ? 'Run!' : 'Stay in place!';
+    final minutes = _graceSecondsRemaining ~/ 60;
+    final seconds = _graceSecondsRemaining % 60;
+    final timeStr = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+      color: color,
+      child: Column(
+        children: [
+          Text(
+            'Grace Period: $timeStr',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // --- Sub Tab Builders for Game Tab ---
 
   Widget _buildRulesSubTab() {
-    return const Center(
+    // Non-host can't see rules until game starts
+    if (!isHost && !_gameStarted) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.lock_outline, size: 48, color: Colors.grey),
+            SizedBox(height: 12),
+            Text('Rules will be visible when the game starts',
+                style: TextStyle(color: Colors.grey)),
+          ],
+        ),
+      );
+    }
+
+    final enabled = isHost && !_gameStarted;
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.rule, size: 48, color: Colors.grey),
-          SizedBox(height: 12),
-          Text('Rules coming soon', style: TextStyle(color: Colors.grey)),
+          Text('Zone Closure', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Text('Close a zone every '),
+              SizedBox(
+                width: 60,
+                child: TextField(
+                  controller: _closureMinutesController,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  enabled: enabled,
+                  onChanged: (v) {
+                    final m = int.tryParse(v);
+                    if (m != null && m > 0) {
+                      _closureMinutes = m;
+                    }
+                  },
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const Text(' minutes'),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Text('Grace Period', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Text('Grace period: '),
+              SizedBox(
+                width: 60,
+                child: TextField(
+                  controller: _gracePeriodController,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  enabled: enabled,
+                  onChanged: (v) {
+                    final s = int.tryParse(v);
+                    if (s != null && s > 0) {
+                      _gracePeriodSeconds = s;
+                    }
+                  },
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const Text(' seconds'),
+            ],
+          ),
         ],
       ),
     );
@@ -741,6 +962,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
             ),
             const SizedBox(height: 4),
             Text(
+              'Code: $_gameId',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 4),
+            Text(
               '${_players.length} player${_players.length == 1 ? '' : 's'}',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -807,11 +1034,16 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                     child: FilledButton.icon(
                       icon: const Icon(Icons.play_arrow),
                       label: const Text('Start Game'),
-                      onPressed: _selectedMap == null
+                      onPressed: (_selectedMap == null || _faceOrder == null)
                           ? null
                           : () {
                               setState(() => _isStarting = true);
-                              _socket!.startGame(_selectedMap!.toJson());
+                              _socket!.startGame(
+                                _selectedMap!.toJson(),
+                                faceOrder: _faceOrder!,
+                                closureIntervalMs: _closureMinutes * 60 * 1000,
+                                gracePeriodMs: _gracePeriodSeconds * 1000,
+                              );
                               _addLog('Starting game, sending map to players…');
                             },
                     ),
@@ -842,18 +1074,51 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         canCreateMaps: true,
         selectedMapName: _selectedMap?.mapName,
         selectedMapId: _selectedMap?.id,
-        onMapSelected: (map) {
-          setState(() => _selectedMap = map);
+        onMapSelected: (map, faces) {
+          setState(() {
+            _selectedMap = map;
+            if (faces != null) {
+              _faceOrder = faces.map<int>((f) => f.faceID as int).toList();
+            } else {
+              _faceOrder = null;
+            }
+          });
           if (map != null) {
             _addLog('Selected map: ${map.mapName}');
-          }
+          } else {
+            _addLog('Map failed to select');
+          };
         },
       );
     }
 
     // During active game, show map viewer
     if (_receivedMap != null) {
-      return MapViewer(map: _receivedMap!);
+      final amRunner = _myRole == 'runner';
+      final showCaughtButton = amRunner && !_inGracePeriod;
+      return Stack(
+        children: [
+          MapViewer(map: _receivedMap! ,showAppBar: false,),
+          if (amRunner)
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: 24,
+              child: SafeArea(
+                top: false,
+                child: _CaughtButton(
+                  enabled: showCaughtButton,
+                  onCaught: () {
+                    final myId = _socket?.currentPlayerId;
+                    if (myId != null) {
+                      _switchRole(myId);
+                    }
+                  },
+                ),
+              ),
+            ),
+        ],
+      );
     }
 
     return const Center(child: Text('Waiting for map data...'));
@@ -871,11 +1136,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         }
       },
       child: LobbyLayout(
-        title: _gameStarted
-            ? 'Game: ${_gameId ?? "..."}'
-            : _gameId != null
-                ? 'Lobby: $_gameId'
-                : 'Connecting...',
+      title: _gameStarted
+          ? '${isHost ? "Host" : "Player"}: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}'
+          : _gameId != null
+              ? 'Lobby: $_gameId'
+              : 'Connecting...',
         isConnected: _status == 'Connected',
         players: _players,
         chatMessages: _chatMessages,
@@ -885,6 +1150,104 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         gameTabBuilder: _buildGameTab,
         // Host gets map tab in lobby, everyone gets it during game
         mapTabBuilder: (isHost || _gameStarted) ? _buildMapTab : null,
+        banner: _buildGraceBanner(),
+      ),
+    );
+  }
+}
+
+// --- Caught Button Widget ---
+
+class _CaughtButton extends StatefulWidget {
+  const _CaughtButton({required this.onCaught, this.enabled = true});
+  final VoidCallback onCaught;
+  final bool enabled;
+
+  @override
+  State<_CaughtButton> createState() => _CaughtButtonState();
+}
+
+class _CaughtButtonState extends State<_CaughtButton>
+    with SingleTickerProviderStateMixin {
+  static const _holdDuration = Duration(seconds: 4);
+  late final AnimationController _controller;
+  bool _triggered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: _holdDuration);
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed && !_triggered) {
+        _triggered = true;
+        widget.onCaught();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onDown(PointerDownEvent _) {
+    if (!widget.enabled) return;
+    _controller.forward(from: 0);
+  }
+
+  void _onUp(PointerEvent _) {
+    if (!_triggered) {
+      _controller.reset();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dimmed = !widget.enabled;
+
+    return Listener(
+      onPointerDown: _onDown,
+      onPointerUp: _onUp,
+      onPointerCancel: _onUp,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return Opacity(
+            opacity: dimmed ? 0.4 : 1.0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      value: _controller.value,
+                      strokeWidth: 3,
+                      color: Theme.of(context).colorScheme.error,
+                      backgroundColor: Theme.of(context).colorScheme.error.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    "I've been caught (hold)",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Theme.of(context).colorScheme.onErrorContainer,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

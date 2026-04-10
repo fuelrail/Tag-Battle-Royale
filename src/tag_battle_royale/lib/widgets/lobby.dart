@@ -53,6 +53,7 @@ class LobbyLayout extends StatefulWidget {
     required this.onSendChat,
     required this.gameTabBuilder,
     this.mapTabBuilder,
+    this.banner,
   });
 
   final String title;
@@ -64,6 +65,7 @@ class LobbyLayout extends StatefulWidget {
   final void Function(String text) onSendChat;
   final Widget Function(BuildContext context) gameTabBuilder;
   final Widget Function(BuildContext context)? mapTabBuilder;
+  final Widget? banner;
 
   @override
   State<LobbyLayout> createState() => LobbyLayoutState();
@@ -289,12 +291,19 @@ class LobbyLayoutState extends State<LobbyLayout> {
           ),
         ],
       ),
-      body: IndexedStack(
-        index: _currentTab,
+      body: Column(
         children: [
-          widget.mapTabBuilder?.call(context) ?? _buildDefaultMapTab(),
-          _buildPlayersTab(),
-          widget.gameTabBuilder(context),
+          if (widget.banner != null) widget.banner!,
+          Expanded(
+            child: IndexedStack(
+              index: _currentTab,
+              children: [
+                widget.mapTabBuilder?.call(context) ?? _buildDefaultMapTab(),
+                _buildPlayersTab(),
+                widget.gameTabBuilder(context),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(

@@ -264,8 +264,17 @@ class GameSocketService {
     });
   }
 
-  void startGame(Map<String, dynamic> mapJson) {
-    _socket.emit('game:start', {'map': mapJson});
+  void startGame(Map<String, dynamic> mapJson, {
+    required List<int> faceOrder,
+    required int closureIntervalMs,
+    required int gracePeriodMs,
+  }) {
+    _socket.emit('game:start', {
+      'map': mapJson,
+      'faceOrder': faceOrder,
+      'closureIntervalMs': closureIntervalMs,
+      'gracePeriodMs': gracePeriodMs,
+    });
   }
 
   /// Confirm that we received and processed the map data.
@@ -301,12 +310,14 @@ class GameSocketService {
     required double x,
     required double y,
     int? zone,
+    bool revealed = true,
   }) {
     if (!_connected) return;
     _socket.emit('location:update', {
       'x': x,
       'y': y,
       if (zone != null) 'zone': zone,
+      'revealed': revealed,
     });
   }
 

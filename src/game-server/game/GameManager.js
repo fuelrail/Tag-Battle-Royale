@@ -75,7 +75,7 @@ class GameManager {
 
   // Reconnection, restore the disconnected player with a new socket
   // Returns the player if reconnection succeeds, null if not found
-reconnectPlayer(gameId, playerId, newSocketId) {
+  reconnectPlayer(gameId, playerId, newSocketId) {
     const game = this.games.get(gameId);
     if (!game) {
       console.log(`[GameManager] Reconnect failed, game ${gameId} not found`);

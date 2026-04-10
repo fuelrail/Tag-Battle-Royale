@@ -3,9 +3,9 @@
 // Events received from the client:
 //   game:create         { playerName, config }
 //   game:join           { gameId, playerName }
-//   game:rejoin         { gameId, playerId }
+//   game:rejoin         { gameId, playerId, hasMap }
 //   game:leave          (no payload)
-//   game:start          { map }
+//   game:start          { map, faceOrder, closureIntervalMs, gracePeriodMs }
 //   game:map:received   (no payload)
 //   player:role         { playerId, role }
 //
@@ -23,9 +23,10 @@
 //   player:reconnected     { playerId, playerName, players }
 //   player:disconnected    { playerId, playerName, players }
 //   player:role:updated    { playerId, role }
-//   game:map               { mapData }
+//   game:map               { map, faceOrder, closureIntervalMs, gracePeriodMs }
 //   game:started           { gameId, startedAt }
-//   location:broadcast     { [playerId]: { status, location, ... } }
+//   game:disbanded         { reason }
+//   location:broadcast     (per-socket filtered payload)
 //   error                  { event, message }
 //
 
@@ -132,7 +133,7 @@ function registerGameHandlers(io, socket, gameManager) {
   // the socket, and puts them back in the room.
   socket.on("game:rejoin", (data, callback) => {
     try {
-      const { gameId, playerId } = data;
+      const { gameId, playerId, hasMap } = data;
       if (!gameId || !playerId) {
         return emitError(socket, callback, "game:rejoin", "gameId and playerId are required");
       }
@@ -159,13 +160,19 @@ function registerGameHandlers(io, socket, gameManager) {
       // Tell the reconnected player they're back
       callback({ ok: true, game: game.toJSON(), playerId: player.id });
 
-      if (game.mapData && !data.hasMap) {
-        socket.emit("game:map", game.mapData);
+      if (game.mapData && !hasMap) {
+        socket.emit("game:map", {
+          map: game.mapData,
+          faceOrder: game.faceOrder,
+          closureIntervalMs: game.closureIntervalMs,
+          gracePeriodMs: game.gracePeriodMs,
+        });
         console.log(`[game:rejoin] Sent map data to reconnecting player "${player.name} (${player.id})"`);
       }
 
       // Restart broadcasting if it was stopped due to all players disconnecting
-      if (game.status === "active" && !game._broadcastTimer) {
+      // and grace period is over
+      if (game.status === "active" && !game._broadcastTimer && !game.inGracePeriod) {
         game.startBroadcasting(makeBroadcastCallback(io, game));
         console.log(`[game:rejoin] Restarted broadcast for game ${game.id}`);
       }
@@ -257,15 +264,38 @@ function registerGameHandlers(io, socket, gameManager) {
       return emitError(socket, callback, "game:start", "Map data is required");
     }
 
+    const faceOrder = data.faceOrder;
+    if (!Array.isArray(faceOrder) || faceOrder.length === 0) {
+      return emitError(socket, callback, "game:start", "Face order is required");
+    }
+
+    const closureIntervalMs = data.closureIntervalMs;
+    if (typeof closureIntervalMs !== "number" || closureIntervalMs <= 0) {
+      return emitError(socket, callback, "game:start", "Closure interval is required");
+    }
+
+    const gracePeriodMs = data.gracePeriodMs;
+    if (typeof gracePeriodMs !== "number" || gracePeriodMs <= 0) {
+      return emitError(socket, callback, "game:start", "Grace period is required");
+    }
+
     console.log(`[game:start] Game ${game.id} starting with ${game.getConnectedPlayerCount()} connected players (triggered by socket ${socket.id})`);
 
     // Store map and enter starting phase
     game.mapData = mapData;
+    game.faceOrder = faceOrder;
+    game.closureIntervalMs = closureIntervalMs;
+    game.gracePeriodMs = gracePeriodMs;
     game.mapConfirmations = new Set();
     game.status = "starting";
 
     // Broadcast map to all players in the room
-    io.to(game.id).emit("game:map", mapData);
+    io.to(game.id).emit("game:map", {
+      map: mapData,
+      faceOrder: game.faceOrder,
+      closureIntervalMs: game.closureIntervalMs,
+      gracePeriodMs: game.gracePeriodMs,
+    });
     console.log(`[game:start] Map sent to all players in game ${game.id}, waiting for confirmations`);
 
     if (callback) callback({ ok: true });
@@ -298,11 +328,6 @@ function registerGameHandlers(io, socket, gameManager) {
       return emitError(socket, callback, "player:role", "Game not found");
     }
 
-    // Only host can switch roles
-    if (playerInfo.id !== game.hostId) {
-      return emitError(socket, callback, "player:role", "Only the host can switch roles");
-    }
-
     const { playerId, role } = data;
     if (!playerId || !["runner", "chaser"].includes(role)) {
       return emitError(socket, callback, "player:role", "Invalid playerId or role");
@@ -311,6 +336,16 @@ function registerGameHandlers(io, socket, gameManager) {
     // Can't change host's role
     if (playerId === game.hostId) {
       return emitError(socket, callback, "player:role", "Cannot change the host's role");
+    }
+
+    // Non-host can only switch themselves from runner to chaser
+    if (playerInfo.id !== game.hostId) {
+      if (playerId !== playerInfo.id) {
+        return emitError(socket, callback, "player:role", "You can only change your own role");
+      }
+      if (playerInfo.role !== "runner" || role !== "chaser") {
+        return emitError(socket, callback, "player:role", "You can only switch from runner to chaser");
+      }
     }
 
     const targetPlayer = game.getPlayer(playerId);
@@ -364,6 +399,7 @@ function _finishStarting(io, game, gameManager) {
     startedAt: game.startedAt,
   });
   console.log(`[game:start] Game ${game.id} started, broadcast tick running every ${game.broadcastIntervalMs}ms`);
+  console.log(`[game:start] game: ${game.id} faceOrder: ${JSON.stringify(game.faceOrder)} closureIntervalMs: ${game.closureIntervalMs}`);
 }
 
 function emitError(socket, callback, event, message) {

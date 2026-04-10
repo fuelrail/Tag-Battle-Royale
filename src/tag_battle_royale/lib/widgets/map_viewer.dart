@@ -12,11 +12,13 @@ class MapViewer extends StatefulWidget {
   const MapViewer({
     super.key,
     required this.map,
+    this.showAppBar = true,
     this.position,
     this.colour = const Color(0xFF2196F3),
   });
 
   final MapFile map;
+  final bool showAppBar;
   final ui.Offset? position;
   final Color colour;
 
@@ -31,16 +33,6 @@ class _MapViewerState extends State<MapViewer> {
 
   bool get allSelected {
     return widget.map.graph.faces.isNotEmpty && _selectedFaces.length == widget.map.graph.faces.length;
-  }
-
-  void _toggleFace(Face face){
-    setState((){
-      if(_selectedFaces.contains(face)){
-        _selectedFaces.remove(face);
-      } else {
-        _selectedFaces.add(face);
-      }
-    });
   }
 
   @override
@@ -70,27 +62,23 @@ class _MapViewerState extends State<MapViewer> {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text(widget.map.mapName),
-        titleTextStyle: const TextStyle(
-          color: Color.fromARGB(255, 255, 255, 255),
-          fontSize: 20,
-        ),
-        iconTheme: const IconThemeData(
-          color: Color.fromARGB(255, 255, 255, 255),
-        ),
-        backgroundColor: const Color.fromARGB(60, 0, 0, 0),
-        elevation: 0,
-      ),
+      appBar: widget.showAppBar
+        ? AppBar(
+            title: Text(widget.map.mapName),
+            titleTextStyle: const TextStyle(
+              color: Color.fromARGB(255, 255, 255, 255),
+              fontSize: 20,
+            ),
+            iconTheme: const IconThemeData(
+              color: Color.fromARGB(255, 255, 255, 255),
+            ),
+            backgroundColor: const Color.fromARGB(60, 0, 0, 0),
+            elevation: 0,
+          )
+        : null,
       body: Stack(
         children: [ 
           MapTransform(
-            onTapScene: (scenePoint){
-              final face = widget.map.graph.pointInFace(scenePoint);
-              if(face == null) return;
-
-              _toggleFace(face);
-            },
             image: image!,
             child: Stack(
               children: [

@@ -18,8 +18,7 @@ class GameDisplay extends StatefulWidget {
     required this.map,
     required this.currentZoneNotifier,
     required this.closedFacesNotifier,
-    required this.userNotifier,
-    required this.otherPlayersNotifier,
+    required this.players,
     this.showPlayerNames = false,
   });
 
@@ -28,8 +27,7 @@ class GameDisplay extends StatefulWidget {
   final ValueNotifier<Face?> currentZoneNotifier;
   final ValueNotifier<List<Face>> closedFacesNotifier;
 
-  final ValueNotifier<Player?> userNotifier;
-  final ValueNotifier<List<Player>> otherPlayersNotifier;
+  final Players players;
 
   final bool showPlayerNames;
 
@@ -68,19 +66,6 @@ class _GameDisplayState extends State<GameDisplay> {
     );
 
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text(widget.map.mapName),
-        titleTextStyle: const TextStyle(
-          color: Colors.white,
-          fontSize: 20,
-        ),
-        iconTheme: const IconThemeData(
-          color: Colors.white,
-        ),
-        backgroundColor: const Color.fromARGB(60, 0, 0, 0),
-        elevation: 0,
-      ),
       body: MapTransform(
         image: image!,
         child: Stack(
@@ -116,8 +101,7 @@ class _GameDisplayState extends State<GameDisplay> {
               child: CustomPaint(
                 size: imageSize,
                 painter: UserPainter(
-                  userNotifier: widget.userNotifier,
-                  otherPlayersNotifier: widget.otherPlayersNotifier,
+                  players: widget.players,
                   showLabel: widget.showPlayerNames,
                 ),
               ),

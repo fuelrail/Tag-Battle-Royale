@@ -4,41 +4,23 @@ import '../player.dart';
 
 class UserPainter extends CustomPainter{
   UserPainter({
-    required this.userNotifier,
-    required this.otherPlayersNotifier,
+    required this.players,
     this.showLabel = false,
-  }) : super(
-    repaint: Listenable.merge([
-      userNotifier,
-      otherPlayersNotifier,
-    ]),
-  );
+  }): super(repaint: players);
 
-  final ValueNotifier<Player?> userNotifier;
-  final ValueNotifier<List<Player>> otherPlayersNotifier;
+  final Players players;
   final bool showLabel;
 
-  static const double _userRadius = 10;
-  static const double _otherPlayerRadius = 8;
+  static const double _radius = 10;
 
   @override
   void paint(Canvas canvas, Size size){
-    final otherPlayers = otherPlayersNotifier.value;
-    final user = userNotifier.value;
 
-    for(final player in otherPlayers){
+    for(final player in players.all){
       _drawPlayer(
         canvas: canvas,
         player: player,
-        radius: _otherPlayerRadius,
-      );
-    }
-
-    if(user != null){
-      _drawPlayer(
-        canvas: canvas,
-        player: user,
-        radius: _userRadius,
+        radius: _radius,
       );
     }
   }
@@ -98,8 +80,6 @@ class UserPainter extends CustomPainter{
 
   @override
   bool shouldRepaint(covariant UserPainter oldDelegate){
-    return oldDelegate.userNotifier != userNotifier ||
-        oldDelegate.otherPlayersNotifier != otherPlayersNotifier ||
-        oldDelegate.showLabel != showLabel;
+    return oldDelegate.showLabel != showLabel;
   }
 }

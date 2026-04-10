@@ -71,13 +71,11 @@ class _MapEditorState extends State<MapEditor> {
                       title: Text(map.mapName),
                       onTap: () async {
                         if(!context.mounted) return;
-
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) =>ExampleGame(
                               map: map,
-                              player: Player(id:"1", colour: Color.fromARGB(0, 12, 186, 192), name:"Player")
                             ),
                           ),
                         );

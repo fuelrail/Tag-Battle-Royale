@@ -18,7 +18,7 @@ class MapSelector extends StatefulWidget {
     this.canCreateMaps = false,
   });
 
-  final void Function(MapFile? map) onMapSelected;
+  final void Function(MapFile? map, List<dynamic>? faces) onMapSelected;
   final String? selectedMapName;
   final String? selectedMapId;
   final bool canCreateMaps;
@@ -50,9 +50,8 @@ class _MapSelectorState extends State<MapSelector> {
         ),
       ),
     );
-
-    if (result.selected == true) {
-      widget.onMapSelected(map);
+    if (result != null && result['selected'] == true) {
+      widget.onMapSelected(map, result['faces']);
     }
   }
 
@@ -65,10 +64,10 @@ class _MapSelectorState extends State<MapSelector> {
 
     if (shouldReload == true) {
       setState(() => _reloadMaps());
-      // Auto-select the newest map (last in the list)
+      // Go into view-and-select mode for the new map
       final maps = await getMaps();
       if (maps.isNotEmpty) {
-        widget.onMapSelected(maps.last);
+        await _viewAndSelect(maps.last);
       }
     }
   }
