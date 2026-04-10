@@ -237,12 +237,12 @@ String _displayForUser(String userName) {
 
   void _receiveChatMessage(String playerName, String text) {
     setState(() {
-      _chatMessages.add(ChatMessage(
-        playerId: playerName,
-        playerName: playerName,
-        text: text,
-        timestamp: DateTime.now().millisecondsSinceEpoch,
-      ));
+      //_chatMessages.add(ChatMessage(
+      //  playerId: playerName,
+      //  playerName: playerName,
+      //  text: text,
+      //  timestamp: DateTime.now().millisecondsSinceEpoch,
+      //));
     });
   }
 
@@ -1002,16 +1002,18 @@ String _displayForUser(String userName) {
 
     List<PlayerData> testing = [];
 
-    return LobbyLayout(
-      title: title,
-      isConnected: endpointMap.isNotEmpty || (isHost && _isAdvertising),
-      players: testing,
-      chatMessages: _chatMessages,
-      currentPlayerId: userName,
-      playerColourMap: _playerColourMap,
-      onSendChat: _sendChatMessage,
-      gameTabBuilder: _buildGameTab,
-      mapTabBuilder: isHost ? _buildMapTab : null,
-    );
+    return Container();
+
+    //return LobbyLayout(
+    //  title: title,
+    //  isConnected: endpointMap.isNotEmpty || (isHost && _isAdvertising),
+    //  players: testing,
+    //  chatMessages: _chatMessages,
+    //  currentPlayerId: userName,
+    //  playerColourMap: _playerColourMap,
+    //  onSendChat: _sendChatMessage,
+    //  gameTabBuilder: _buildGameTab,
+    //  mapTabBuilder: isHost ? _buildMapTab : null,
+    //);
   }
 }

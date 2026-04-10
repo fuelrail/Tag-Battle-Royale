@@ -19,9 +19,17 @@ class Game {
     // Map transfer
     this.mapData = null;
     this.mapConfirmations = new Set(); // playerIds that confirmed receival
+    // Zone closure
     this.faceOrder = [];        // ordered list of faceIDs
     this.closureIntervalMs = null;
     this.gracePeriodMs = null;
+
+    // Chat history per channel
+    this.chatHistory = {
+      all: [],
+      runner: [],
+      chaser: [],
+    };
   }
 
   // --- Players ---
@@ -65,6 +73,18 @@ class Game {
 
   getPlayerList() {
     return Array.from(this.players.values()).map((p) => p.toJSON());
+  }
+
+  // --- Chat ---
+
+  addChatMessage(channel, message) {
+    if (this.chatHistory[channel]) {
+      this.chatHistory[channel].push(message);
+    }
+  }
+
+  getChatHistory(channel) {
+    return this.chatHistory[channel] || [];
   }
 
   // --- Map transfer ---

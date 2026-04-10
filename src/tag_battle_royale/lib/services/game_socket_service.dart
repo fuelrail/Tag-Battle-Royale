@@ -5,6 +5,7 @@ typedef JsonCallback = void Function(Map<String, dynamic> data);
 typedef ErrorCallback = void Function(String event, String message);
 typedef LocationBroadcastCallback = void Function(Map<String, PlayerLocationInfo> players);
 typedef ChatMessageCallback = void Function(ChatMessage message);
+typedef ChatHistoryCallback = void Function(String channel, List<ChatMessage> messages);
 
 /// Player location info received from the server's broadcast.
 class PlayerLocationInfo {
@@ -61,12 +62,14 @@ class ChatMessage {
   final String playerName;
   final String text;
   final int timestamp;
+  final String channel;
 
   ChatMessage({
     required this.playerId,
     required this.playerName,
     required this.text,
     required this.timestamp,
+    required this.channel,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -75,6 +78,7 @@ class ChatMessage {
       playerName: json['playerName'],
       text: json['text'],
       timestamp: json['timestamp'],
+      channel: json['channel'] ?? 'all',
     );
   }
 }
@@ -103,11 +107,12 @@ class GameSocketService {
   JsonCallback? onPlayerReconnected;              // { playerId, playerName, players }
   JsonCallback? onPlayerDisconnected;             // { playerId, playerName, players }
   JsonCallback? onRejoined;                       // { game, playerId }
-  JsonCallback? onMapData;                        // map json
+  JsonCallback? onMapData;                        // { map, faceOrder, closureIntervalMs, gracePeriodMs }
   JsonCallback? onPlayerRoleUpdated;              // { playerId, role }
-  JsonCallback? onGameDisbanded;                  // 
+  JsonCallback? onGameDisbanded;                  // { reason }
   LocationBroadcastCallback? onLocationBroadcast; // { playerId: PlayerLocationInfo }
-  ChatMessageCallback? onChatMessage;             // ChatMessage
+  ChatMessageCallback? onChatMessage;             // ChatMessage { playerId, playerName, text, timestamp, channel }
+  ChatHistoryCallback? onChatHistory;             // (channel, List<ChatMessage>)
 
 
   GameSocketService({required this.serverUrl});
@@ -199,6 +204,16 @@ class GameSocketService {
     _socket.on('chat:message', (data) {
       final d = Map<String, dynamic>.from(data);
       onChatMessage?.call(ChatMessage.fromJson(d));
+    });
+
+    _socket.on('chat:history', (data) {
+      final d = Map<String, dynamic>.from(data);
+      final channel = d['channel'] as String;
+      final rawMessages = d['messages'] as List;
+      final messages = rawMessages
+          .map((m) => ChatMessage.fromJson(Map<String, dynamic>.from(m)))
+          .toList();
+      onChatHistory?.call(channel, messages);
     });
 
     _socket.on('error', (data) {
@@ -301,9 +316,12 @@ class GameSocketService {
     });
   }
 
-  void sendChat(String text) {
+  void sendChat(String text, {String channel = 'all'}) {
     if (!_connected) return;
-    _socket.emit('chat:send', {'text': text});
+    _socket.emit('chat:send', {
+      'text': text,
+      'channel': channel,
+    });
   }
 
   void sendLocation({

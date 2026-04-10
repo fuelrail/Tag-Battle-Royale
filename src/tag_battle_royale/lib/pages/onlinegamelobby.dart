@@ -49,8 +49,14 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   final List<PlayerData> _players = [];
   final Map<String, Color> _playerColourMap = {}; // { playerId: Colour }
   final ScrollController _playersScrollController = ScrollController();
-  final List<ChatMessage> _chatMessages = [];
   final List<String> _log = [];
+
+  final Map<String, List<ChatMessage>> _chatMessages = {
+    'all': [],
+    'runner': [],
+    'chaser': [],
+  };
+  String _activeChannel = 'all';
 
   MapFile? _selectedMap; // host only
   bool _isStarting = false;
@@ -331,7 +337,19 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
     _socket!.onChatMessage = (message) {
       if (!mounted) return;
-      setState(() => _chatMessages.add(message));
+      setState(() {
+        final channel = message.channel;
+        _chatMessages[channel] ??= [];
+        _chatMessages[channel]!.add(message);
+      });
+    };
+
+    _socket!.onChatHistory = (channel, messages) {
+      if (!mounted) return;
+      setState(() {
+        _chatMessages[channel] = messages;
+      });
+      _addLog('Received ${messages.length} $channel chat messages');
     };
 
     _socket!.onMapData = (data) {
@@ -408,6 +426,14 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       // If this player's role changed, update LocationService
       if (playerId == _socket?.currentPlayerId) {
         _updateLocationRole();
+        if (role == 'chaser') {
+          setState(() {
+            _chatMessages['runner'] = [];
+            if (_activeChannel == 'runner') {
+              _activeChannel = 'chaser';
+            }
+          });
+        }
       }
     };
 
@@ -459,6 +485,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         name: name,
         role: role,
         isHost: id == _hostId,
+        connected: player['connected'] ?? true,
       ));
     }
   }
@@ -592,6 +619,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _socket?.onGameStarted = null;
     _socket?.onLocationBroadcast = null;
     _socket?.onChatMessage = null;
+    _socket?.onChatHistory = null;
     _socket?.onMapData = null;
     _socket?.onPlayerRoleUpdated = null;
     _socket?.onGameDisbanded = null;
@@ -795,7 +823,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                             style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w500,
-                              color: player.nameColour,
+                              color: player.connected ? player.nameColour : Colors.grey,
                             ),
                           ),
                           TextSpan(
@@ -805,6 +833,15 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                               color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                           ),
+                          if (!player.connected)
+                            const TextSpan(
+                              text: '  disconnected',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
                         ],
                       ),
                       overflow: TextOverflow.ellipsis,
@@ -947,8 +984,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   }
 
   Widget _buildTopSection(BuildContext context) {
+    // Active game top section
     if (_gameStarted) {
-      // Active game top section
+      final disconnected = _players.where((p) => !p.connected).length;
+      final countText = '${_players.length} player${_players.length == 1 ? '' : 's'}';
+      final disconnectedText = disconnected > 0 ? ', $disconnected disconnected' : '';
+      
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
         child: Column(
@@ -968,7 +1009,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              '${_players.length} player${_players.length == 1 ? '' : 's'}',
+              '$countText$disconnectedText',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
@@ -1087,7 +1128,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
             _addLog('Selected map: ${map.mapName}');
           } else {
             _addLog('Map failed to select');
-          };
+          }
         },
       );
     }
@@ -1146,11 +1187,14 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         chatMessages: _chatMessages,
         currentPlayerId: _socket?.currentPlayerId,
         playerColourMap: _playerColourMap,
-        onSendChat: (text) => _socket?.sendChat(text),
+        onSendChat: (text) => _socket?.sendChat(text, channel: _activeChannel),
         gameTabBuilder: _buildGameTab,
-        // Host gets map tab in lobby, everyone gets it during game
-        mapTabBuilder: (isHost || _gameStarted) ? _buildMapTab : null,
+        mapTabBuilder: (isHost || _gameStarted) ? _buildMapTab : null, // host gets map tab in lobby
         banner: _buildGraceBanner(),
+        gameStarted: _gameStarted,
+        myRole: _myRole,
+        activeChannel: _activeChannel,
+        onChannelChanged: (channel) => setState(() => _activeChannel = channel),
       ),
     );
   }
