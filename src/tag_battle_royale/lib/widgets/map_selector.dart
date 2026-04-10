@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../util/map_file_handler.dart';
-import 'map_viewer.dart';
+import 'zone_selector.dart';
 import 'google_maps_viewer.dart';
 
 /// Map browser that lets the host view and select a map for the game.
@@ -45,9 +45,8 @@ class _MapSelectorState extends State<MapSelector> {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => MapViewer(
+        builder: (_) => ZoneSelector(
           map: map,
-          showSelectButton: true,
         ),
       ),
     );

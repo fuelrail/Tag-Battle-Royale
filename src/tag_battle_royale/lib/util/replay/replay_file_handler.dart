@@ -15,13 +15,50 @@ class ReplayFile {
   final MapFile map;
   final List<Replay> replays;
 
+  /// faceID -> closing time in seconds
+  final Map<int, double> zoneClosings;
+
   ReplayFile({
     required this.id,
     required this.fileName,
     required this.replayName,
     required this.map,
-    required this.replays,
-  });
+    List<Replay>? replays,
+    Map<int, double>? zoneClosings,
+  })  : replays = replays ?? [],
+        zoneClosings = zoneClosings ?? {};
+
+  void addReplay(Replay replay){
+    replays.removeWhere((r) => r.playerID == replay.playerID);
+    replays.add(replay);
+  }
+
+  void addZoneClosing({
+    required int faceID,
+    required double time,
+  }){
+    final existing = zoneClosings[faceID];
+
+    if(existing == null || time < existing){
+      zoneClosings[faceID] = time;
+    }
+  }
+
+  bool isZoneClosedAtTime({
+    required int faceID,
+    required double time,
+  }){
+    final closingTime = zoneClosings[faceID];
+    if(closingTime == null) return false;
+    return time >= closingTime;
+  }
+
+  List<int> getClosedZoneIdsAtTime(double time){
+    return zoneClosings.entries
+        .where((entry) => time >= entry.value)
+        .map((entry) => entry.key)
+        .toList();
+  }
 
   Map<String, dynamic> toJson(){
     return {
@@ -30,6 +67,9 @@ class ReplayFile {
       'replayName': replayName,
       'map': map.toJson(),
       'replays': replays.map((r) => r.toJson()).toList(),
+      'zoneClosings': zoneClosings.map(
+        (key, value) => MapEntry(key.toString(), value),
+      ),
     };
   }
 
@@ -37,15 +77,24 @@ class ReplayFile {
     return jsonEncode(toJson());
   }
 
-  factory ReplayFile.fromJson(
-    Map<String, dynamic> json,){
+  factory ReplayFile.fromJson(Map<String, dynamic> json){
+    final zoneClosingsJson =
+        (json['zoneClosings'] as Map?)?.cast<String, dynamic>() ?? {};
+
     return ReplayFile(
       id: json['id'] as String,
       fileName: json['fileName'] as String,
       replayName: json['replayName'] as String,
       map: MapFile.fromJson(json['map'] as Map<String, dynamic>),
-      replays: (json['replays'] as List).map((r) =>
-      Replay.fromJson(Map<String, dynamic>.from(r))).toList(),
+      replays: (json['replays'] as List)
+          .map((r) => Replay.fromJson(Map<String, dynamic>.from(r)))
+          .toList(),
+      zoneClosings: zoneClosingsJson.map(
+        (key, value) => MapEntry(
+          int.parse(key),
+          (value as num).toDouble(),
+        ),
+      ),
     );
   }
 
@@ -57,12 +106,14 @@ class ReplayFile {
 
   static Future<ReplayFile> create({
     required MapFile map,
-    required List<Replay> replays,
+    List<Replay>? replays,
+    Map<int, double>? zoneClosings,
   }) async {
     final id = _generateUniqueId();
     final fileName = '$id.json';
     final now = DateTime.now();
-    final replayName = "Replay of ${map.mapName} on ${now.day}/${now.month}/${now.year}";
+    final replayName =
+        'Replay of ${map.mapName} on ${now.day}/${now.month}/${now.year}';
 
     return ReplayFile(
       id: id,
@@ -70,6 +121,7 @@ class ReplayFile {
       replayName: replayName,
       map: map,
       replays: replays,
+      zoneClosings: zoneClosings,
     );
   }
 
@@ -110,7 +162,7 @@ Future<List<ReplayFile>> getReplayFiles() async {
 
   final replayFiles = <ReplayFile>[];
 
-  for (final file in files){
+  for(final file in files){
     try {
       final content = await file.readAsString();
       final decoded = jsonDecode(content);
@@ -119,11 +171,7 @@ Future<List<ReplayFile>> getReplayFiles() async {
         throw Exception('Invalid root JSON');
       }
 
-      replayFiles.add(
-        ReplayFile.fromJson(
-          decoded,
-        ),
-      );
+      replayFiles.add(ReplayFile.fromJson(decoded));
     } catch (e){
       debugPrint('Skipping broken replay file: ${file.path} -> $e');
     }

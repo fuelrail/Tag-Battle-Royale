@@ -6,7 +6,7 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:tag_battle_royale/util/map_file_handler.dart';
 import 'package:tag_battle_royale/util/faceDetection/face_detection_graph.dart';
 
-void main() {
+void main(){
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory tempDir;
@@ -17,12 +17,12 @@ void main() {
   });
 
   tearDown(() async {
-    if (await tempDir.exists()) {
+    if(await tempDir.exists()){
       await tempDir.delete(recursive: true);
     }
   });
 
-  test('MapFile toJson and fromJson', () {
+  test('MapFile toJson and fromJson', (){
     final mapFile = MapFile(
       id: '1',
       fileName: '1.json',

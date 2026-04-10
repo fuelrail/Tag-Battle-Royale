@@ -5,7 +5,7 @@ class PointBuilder {
   final double epsilon;
   final double mergeTolerance;
 
-  const PointBuilder({required this.epsilon, required this.mergeTolerance});
+  const PointBuilder({this.epsilon = 1e-6, required this.mergeTolerance});
 
   // checks if the distance between two points is within a tolerance
   bool samePoint(ui.Offset a, ui.Offset b, [double? tol]){

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:tag_battle_royale/util/player.dart';
 
+import 'example_game.dart';
 import '../widgets/map_viewer.dart';
 import '../util/map_file_handler.dart';
 import '../widgets/google_maps_viewer.dart';
@@ -73,12 +75,18 @@ class _MapEditorState extends State<MapEditor> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => MapViewer(
+                            builder: (_) =>ExampleGame(
                               map: map,
-                              playing: true,
+                              player: Player(id:"1", colour: Color.fromARGB(0, 12, 186, 192), name:"Player")
                             ),
                           ),
                         );
+                        //   MaterialPageRoute(
+                        //     builder: (_) => MapViewer(
+                        //       map: map,
+                        //     ),
+                        //   ),
+                        // );
                       },
                       trailing: IconButton(
                         icon: const Icon(Icons.delete, color: Colors.red),

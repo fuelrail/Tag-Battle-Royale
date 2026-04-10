@@ -465,8 +465,8 @@ class Face {
       'Face(area=${signedArea.toStringAsFixed(2)}, verts=${polygon.length})';
 
   @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
+  bool operator ==(Object other){
+    if(identical(this, other)) return true;
     return other is Face && other.faceID == faceID;
   }
 

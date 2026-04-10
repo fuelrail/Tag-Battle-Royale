@@ -5,34 +5,39 @@ class Replay {
   final String playerID;
   final String playerName;
   final Color colour;
-  final Stopwatch _timer = Stopwatch();
+  final Stopwatch? timer;
   final List<ReplayFrame> positions = [];
 
   Replay({
     required this.playerID,
     required this.playerName,
     required this.colour,
+    this.timer,
   });
 
   void start(){
-    _timer.start();
+    if(timer == null){return;}
+    timer!.start();
   }
 
   void stop(){
-    _timer.stop();
+    if(timer == null){return;}
+    timer!.stop();
   }
 
   void reset(){
-    _timer
+    if(timer == null){return;}
+    timer!
       ..stop()
       ..reset();
     positions.clear();
   }
 
   void add(ui.Offset position){
+    if(timer == null){return;}
     positions.add(
       ReplayFrame(
-        time: _timer.elapsedMilliseconds / 1000.0,
+        time: timer!.elapsedMilliseconds / 1000.0,
         position: position,
       ),
     );

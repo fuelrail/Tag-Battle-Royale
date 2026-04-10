@@ -2,27 +2,29 @@ import 'package:flutter/material.dart';
 import "../faceDetection/face_detection_graph.dart";
 
 class CurrentZonePainter extends CustomPainter {
-  final Face? face;
+  final ValueNotifier<Face?> faceNotifier;
   final Color color;
   final double strokeWidth;
 
   CurrentZonePainter({
-    required this.face,
+    required this.faceNotifier,
     this.color = const Color.fromARGB(255, 255, 255, 255),
     this.strokeWidth = 2,
-  });
+  }) : super(repaint: faceNotifier);
 
   @override
   void paint(Canvas canvas, Size size){
-    if (face == null) return;
-    if (face!.polygon.length < 2) return;
+    final face = faceNotifier.value;
+
+    if(face == null) return;
+    if(face.polygon.length < 3) return;
 
     final path = Path();
-    final first = face!.polygon.first;
+    final first = face.polygon.first;
     path.moveTo(first.dx, first.dy);
 
-    for (int i = 1; i < face!.polygon.length; i++){
-      final p = face!.polygon[i];
+    for(int i = 1; i < face.polygon.length; i++){
+      final p = face.polygon[i];
       path.lineTo(p.dx, p.dy);
     }
 
@@ -38,8 +40,7 @@ class CurrentZonePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CurrentZonePainter oldDelegate){
-    return oldDelegate.face != face ||
-        oldDelegate.color != color ||
+    return oldDelegate.color != color ||
         oldDelegate.strokeWidth != strokeWidth;
   }
 }

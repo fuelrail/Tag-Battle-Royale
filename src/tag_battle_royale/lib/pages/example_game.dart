@@ -1,28 +1,27 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:tag_battle_royale/widgets/game_display.dart';
 
-import '../widgets/map_viewer.dart';
 import '../util/gps.dart';
 import '../util/map_file_handler.dart';
 import '../util/replay/replay.dart';
 import '../util/replay/replay_file_handler.dart';
+import '../util/faceDetection/face_detection_graph.dart';
+import '../util/player.dart';
 
 class ExampleGame extends StatefulWidget {
   const ExampleGame({
     super.key,
     required this.map,
-    required this.playerID,
-    required this.playerName,
-    required this.colour,
+    required this.player,
   });
 
   final MapFile map;
-  final String playerID;
-  final String playerName;
-  final Color colour;
+  final Player player;
 
   @override
   State<ExampleGame> createState() => _ExampleGameState();
@@ -31,19 +30,32 @@ class ExampleGame extends StatefulWidget {
 class _ExampleGameState extends State<ExampleGame> {
   ui.Image? image;
   Timer? _locationTimer;
+  Timer? _zoneCloseTimer;
+  Stopwatch gameTimer = Stopwatch();
   late Replay _replay;
-  ui.Offset? playerPos;
 
   final int updatesPerSecond = 1;
   bool _isSaving = false;
+
+  final Random _random = Random();
+  final List<Face> _closedFaces = [];
+
+  /// faceID -> closing time in seconds
+  final Map<int, double> _zoneClosings = {};
+
+  final ValueNotifier<Player?> _userNotifier = ValueNotifier(null);
+  final ValueNotifier<List<Player>> _otherPlayersNotifier = ValueNotifier([]);
+  final ValueNotifier<Face?> _currentZoneNotifier = ValueNotifier(null);
+  final ValueNotifier<List<Face>> _closedFacesNotifier = ValueNotifier([]);
 
   @override
   void initState(){
     super.initState();
     _replay = Replay(
-      playerID: widget.playerID,
-      playerName: widget.playerName,
-      colour: widget.colour,
+      playerID: widget.player.id,
+      playerName: widget.player.name,
+      colour: widget.player.colour,
+      timer: gameTimer,
     );
     _init();
   }
@@ -53,13 +65,16 @@ class _ExampleGameState extends State<ExampleGame> {
 
     if(!mounted) return;
 
-    _replay.start();
     _startLocationUpdates();
+    _startZoneClosing();
+    gameTimer.start();
 
     setState((){});
   }
 
   void _startLocationUpdates(){
+    _locationTimer?.cancel();
+
     _locationTimer = Timer.periodic(
       Duration(milliseconds: (1000 / updatesPerSecond).toInt()),
       (_) async {
@@ -70,10 +85,47 @@ class _ExampleGameState extends State<ExampleGame> {
 
           final point = _latLngToImage(pos);
           _replay.add(point);
-          setState((){
-            playerPos = point;
-          });
+
+          final currentFace = widget.map.graph.pointInFace(point);
+
+          _userNotifier.value = Player(
+            id: widget.player.id,
+            position: point,
+            colour: widget.player.colour,
+            name: widget.player.name,
+          );
+
+          _currentZoneNotifier.value = currentFace;
         } catch (_){}
+      },
+    );
+  }
+
+  void _startZoneClosing(){
+    _zoneCloseTimer?.cancel();
+
+    _zoneCloseTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_){
+        final allFaces = widget.map.graph.faces
+            .where((face) => !face.isOuter)
+            .toList();
+
+        final openFaces = allFaces.where((face){
+          return !_zoneClosings.containsKey(face.faceID);
+        }).toList();
+
+        if(openFaces.isEmpty){
+          _zoneCloseTimer?.cancel();
+          return;
+        }
+
+        final randomFace = openFaces[_random.nextInt(openFaces.length)];
+
+        _closedFaces.add(randomFace);
+        _closedFacesNotifier.value = List<Face>.from(_closedFaces);
+
+        _zoneClosings[randomFace.faceID] = gameTimer.elapsedMilliseconds / 1000.0;
       },
     );
   }
@@ -103,17 +155,18 @@ class _ExampleGameState extends State<ExampleGame> {
     _isSaving = true;
 
     _locationTimer?.cancel();
+    _zoneCloseTimer?.cancel();
     _replay.stop();
 
     try {
       final replayFile = await ReplayFile.create(
         map: widget.map,
         replays: [_replay],
+        zoneClosings: Map<int, double>.from(_zoneClosings),
       );
 
-
       await replayFile.saveReplayFile();
-      _replay.stop();
+
       if(!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -126,19 +179,35 @@ class _ExampleGameState extends State<ExampleGame> {
         const SnackBar(content: Text('Failed to save replay')),
       );
     } finally {
-    _isSaving = false;
-  }
+      _isSaving = false;
+    }
   }
 
   @override
   void dispose(){
     _locationTimer?.cancel();
+    _zoneCloseTimer?.cancel();
     _replay.stop();
+    _userNotifier.dispose();
+    _otherPlayersNotifier.dispose();
+    _currentZoneNotifier.dispose();
+    _closedFacesNotifier.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context){
+    if(image == null){
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Example Game'),
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Example Game'),
@@ -149,10 +218,13 @@ class _ExampleGameState extends State<ExampleGame> {
           ),
         ],
       ),
-      body: MapViewer(
+      body: GameDisplay(
         map: widget.map,
-        playing: true,
-        position: playerPos,
+        currentZoneNotifier: _currentZoneNotifier,
+        closedFacesNotifier: _closedFacesNotifier,
+        userNotifier: _userNotifier,
+        otherPlayersNotifier: _otherPlayersNotifier,
+        showPlayerNames: false,
       ),
     );
   }
