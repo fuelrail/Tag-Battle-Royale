@@ -7,6 +7,8 @@ import '../services/location_service.dart';
 import '../util/map_file_handler.dart';
 import '../util/gamesession.dart';
 import '../util/player_data.dart';
+import '../util/replay/replay.dart';
+import '../util/replay/replay_file_handler.dart';
 import '../widgets/lobby.dart';
 import '../widgets/hold_button.dart';
 import '../widgets/map_selector.dart';
@@ -91,6 +93,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   Timer? _graceTimer;
   int _graceSecondsRemaining = 0;
 
+  // Replay
+  Replay? _replay;
+  bool _replaySubmitted = false;
+  Timer? _replayRetryTimer;
+  final Map<String, Map<String, dynamic>> _receivedReplays = {}; // { playerId: replayJson }
+
   // --- Get properties ---
 
   bool get isHost => widget.isHostOverride ?? (widget.role == ConnectionRole.host);
@@ -161,6 +169,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   void dispose() {
     _unhookCallbacks();
     _graceTimer?.cancel();
+    _replayRetryTimer?.cancel();
     _confettiController.dispose();
     // Only fully leave if the game hasn't started (lobby phase).
     // If the game has started, just disconnect the socket, the server
@@ -207,6 +216,106 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     });
   }
 
+  // --- Replay ---
+
+  void _startReplay() {
+    final me = _findPlayer(_socket?.currentPlayerId);
+    if (me == null || _gameStartedAt == null) return;
+
+    _replay = Replay(
+      playerID: me.id,
+      playerName: me.name,
+      colour: me.nameColour,
+      gameStartedAt: _gameStartedAt,
+    );
+
+    _location?.onFrameRecorded = (position, zone, role) {
+      _replay?.add(position, zone: zone, role: role);
+    };
+
+    _addLog('Replay recording started');
+  }
+
+  void _submitReplay() {
+    if (_replay == null || _replaySubmitted) return;
+
+    _addLog('Submitting replay (${_replay!.positions.length} frames)...');
+
+    _socket?.submitReplay(_replay!.toJson(), onResult: (success) {
+      if (!mounted) return;
+      if (success) {
+        _replaySubmitted = true;
+        _replayRetryTimer?.cancel();
+        _addLog('Replay submitted successfully');
+      } else {
+        _addLog('Replay submission failed, retrying in 5s...');
+        _scheduleReplayRetry();
+      }
+    });
+  }
+
+  void _scheduleReplayRetry() {
+    _replayRetryTimer?.cancel();
+    _replayRetryTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted && !_replaySubmitted) {
+        _submitReplay();
+      }
+    });
+  }
+
+  Future<void> _assembleAndSaveReplay() async {
+    if (_receivedMap == null) {
+      _addLog('ERROR: No map data for replay assembly');
+      return;
+    }
+
+    // Compute zone closings from game config
+    final Map<int, double> zoneClosings = {};
+    for (int i = 0; i < _activeFaceOrder.length; i++) {
+      final closingTimeMs = _activeGracePeriodMs + ((i + 1) * _activeClosureIntervalMs);
+      zoneClosings[_activeFaceOrder[i]] = closingTimeMs / 1000.0;
+    }
+
+    // Collect all replays (including our own)
+    final List<Replay> replays = [];
+    for (final entry in _receivedReplays.entries) {
+      try {
+        replays.add(Replay.fromJson(entry.value));
+      } catch (e) {
+        _addLog('WARNING: Failed to assemble replay from ${entry.key}: $e');
+      }
+    }
+    // Add our own replay if not already received from server
+    if (_replay != null && !_receivedReplays.containsKey(_socket?.currentPlayerId)) {
+      replays.add(_replay!);
+    }
+
+    _addLog('Assembling replay with ${replays.length} player(s)...');
+
+    try {
+      final replayFile = await ReplayFile.create(
+        map: _receivedMap!,
+        replays: replays,
+        zoneClosings: zoneClosings,
+      );
+      await replayFile.saveReplayFile();
+      _addLog('Replay saved: ${replayFile.replayName}');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Replay saved: ${replayFile.replayName}')),
+        );
+      }
+    } catch (e) {
+      _addLog('ERROR: Failed to save replay: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to save replay')),
+        );
+      }
+    }
+  }
+
   // --- Game finished ---
 
   void _onGameFinished(Map<String, dynamic> data) {
@@ -222,7 +331,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _addLog('Game finished: $reason');
     _confettiController.play();
 
-    // Switch to game tab
+    _submitReplay();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _lobbyKey.currentState?.switchToGameTab();
     });
@@ -251,6 +361,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
       // Notify location service if game is active
       if (_gameStarted) _location?.notifySocketConnected();
+
+      if (_gameFinished && !_replaySubmitted) _submitReplay();
     };
 
     _socket!.onDisconnected = () {
@@ -314,11 +426,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         gameStarted: true,
       );
 
-      // Map and role will be set when the map arrives
       _updateLocationRole();
       _location?.getClosedZones = () => _closedZones;
       _startGraceCountdown();
-      // Tracking will start when the map arrives
+      if (_replay == null) _startReplay();
     };
 
     _socket!.onPlayerJoined = (data) {
@@ -377,6 +488,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       _updateLocationRole();
       _location?.getClosedZones = () => _closedZones;
       _startGraceCountdown();
+      _startReplay();
       if (_location?.map != null) _location?.startTracking();
     };
 
@@ -484,6 +596,20 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       }
     };
 
+    _socket!.onReplayReceived = (data) {
+      if (!mounted) return;
+      final playerId = data['playerId']?.toString();
+      final replayData = data['replay'] as Map<String, dynamic>?;
+      if (playerId == null || replayData == null) return;
+
+      setState(() => _receivedReplays[playerId] = replayData);
+
+      final playerName = replayData['playerName'] ?? playerId;
+      final frameCount = (replayData['positions'] as List?)?.length ?? 0;
+      _addLog('Replay received from $playerName ($frameCount frames) '
+        '[${_receivedReplays.length}/${_players.length}]');
+    };
+
     _socket!.onGameDisbanded = (data) {
       if (!mounted) return;
       GameSession.clear();
@@ -507,6 +633,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
   void _unhookCallbacks() {
     _location?.onLog = null;
+    _location?.onFrameRecorded = null;
     _socket?.onConnected = null;
     _socket?.onDisconnected = null;
     _socket?.onGameCreated = null;
@@ -523,6 +650,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _socket?.onChatHistory = null;
     _socket?.onMapData = null;
     _socket?.onPlayerRoleUpdated = null;
+    _socket?.onReplayReceived = null;
     _socket?.onGameDisbanded = null;
     _socket?.onError = null;
   }
@@ -612,7 +740,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     if (playerId == _socket?.currentPlayerId) _updateLocationRole();
   }
 
-  // --- Host end game ---
+  // --- End game ---
 
   Future<void> _hostEndGame() async {
     final confirmed = await showDialog<bool>(
@@ -627,6 +755,13 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       ),
     );
     if (confirmed == true) _socket?.endGame();
+  }
+
+  Future<void> _leaveAndAssembleReplay() async {
+    await _assembleAndSaveReplay();
+    if (mounted) {
+      Navigator.popUntil(context, (route) => route.isFirst);
+    }
   }
 
   // --- Helpers ---
@@ -689,26 +824,34 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
   Widget? _buildBanner() {
     if (_gameFinished) {
-      final message = _finishReason == 'host_ended'
+      final String message;
+      final Color color;
+    
+      if (isHost) {
+        final allReceived = _receivedReplays.length >= _players.length;
+        message = allReceived ? 'All Replays Received.' : 'Receiving Replays...';
+        color = allReceived ? Colors.green : Colors.amber.shade700;
+      } else {
+        message = _replaySubmitted ? 'Replay Sent.' : 'Sending Replay...';
+        color = _replaySubmitted ? Colors.green : Colors.amber.shade700;
+      }
+    
+      final String finishMessage = _finishReason == 'host_ended'
           ? 'Game ended by host'
           : 'All runners have been caught!';
+    
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-        color: Colors.amber.shade700,
-        child: Column(
-          children: [
-            Text(
-              message,
-              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 2),
-            const Text(
-              'Generating replay...',
-              style: TextStyle(color: Colors.white, fontSize: 14),
-            ),
-          ],
-        ),
+        color: color,
+        child: Column(children: [
+          Text(finishMessage,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 2),
+          Text(message,
+              style: const TextStyle(color: Colors.white, fontSize: 14)),
+        ]),
       );
     }
 
@@ -1172,23 +1315,39 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   }
 
   Widget _buildFinishedTopSection(BuildContext context) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-        child: Column(
-          children: [
-            Text(
-              'Game Ended',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Colors.amber.shade700, fontWeight: FontWeight.bold),
-            ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        children: [
+          Text(
+            'Game Ended',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Colors.amber.shade700, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text('Code: $_gameId',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          if (isHost) ...[
             const SizedBox(height: 4),
-            Text('Code: $_gameId',
+            Text('Replays received: ${_receivedReplays.length}/${_players.length}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.save),
+                label: const Text('Leave Game and Assemble Replay'),
+                onPressed: _leaveAndAssembleReplay,
+              ),
+            ),
           ],
-        ),
-      );
-    }
+        ]
+      ),
+    );
+  }
 
     Widget _buildActiveTopSection(BuildContext context) {
       final disconnected = _players.where((p) => !p.connected).length;

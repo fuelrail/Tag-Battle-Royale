@@ -200,6 +200,17 @@ function registerGameHandlers(io, socket, gameManager) {
         console.log(`[game:rejoin] Sent map data to reconnecting player "${player.name} (${player.id})"`);
       }
 
+      // Send stored replays to rejoining host
+      if (player.id === game.hostId && game.status === "finished") {
+        const storedReplays = game.getStoredReplays();
+        for (const { playerId: rpId, data: rpData } of storedReplays) {
+          socket.emit("replay:received", { playerId: rpId, replay: rpData });
+        }
+        if (storedReplays.length > 0) {
+          console.log(`[game:rejoin] Sent ${storedReplays.length} stored replays to rejoining host`);
+        }
+      }
+
       // Restart broadcasting if it was stopped due to all players disconnecting
       // and grace period is over
       if ((game.status === "active" || game.status === "finished") && !game._broadcastTimer && !game.inGracePeriod) {
@@ -461,6 +472,48 @@ function registerGameHandlers(io, socket, gameManager) {
     });
 
     console.log(`[game:end] Game ${game.id} finished, host ended`);
+  });
+
+  // --- Replay submission ---
+
+  socket.on("replay:submit", (data, callback) => {
+    const playerInfo = gameManager.getPlayerBySocketId(socket.id);
+    if (!playerInfo) {
+      return emitError(socket, callback, "replay:submit", "Not in a game");
+    }
+
+    const game = gameManager.getGame(playerInfo.gameId);
+    if (!game) {
+      return emitError(socket, callback, "replay:submit", "Game not found");
+    }
+
+    if (game.status !== "finished") {
+      return emitError(socket, callback, "replay:submit", "Game is not finished");
+    }
+
+    const replayData = data?.replay;
+    if (!replayData) {
+      return emitError(socket, callback, "replay:submit", "Replay data is required");
+    }
+
+    // Store on the game
+    game.storeReplay(playerInfo.id, replayData);
+    console.log(`[replay:submit] "${playerInfo.name}" (${playerInfo.id}) submitted replay for game ${game.id} (${game.replays.size}/${game.getPlayerCount()} received)`);
+
+    if (callback) callback({ ok: true });
+
+    // Forward to host
+    const host = game.getPlayer(game.hostId);
+    if (host && host.connected && host.socketId) {
+      const hostSocket = io.sockets.sockets.get(host.socketId);
+      if (hostSocket) {
+        hostSocket.emit("replay:received", {
+          playerId: playerInfo.id,
+          replay: replayData,
+        });
+        console.log(`[replay:submit] Forwarded replay from "${playerInfo.name}" to host`);
+      }
+    }
   });
 
   // Re-check map confirmations if a player disconnects during starting phase

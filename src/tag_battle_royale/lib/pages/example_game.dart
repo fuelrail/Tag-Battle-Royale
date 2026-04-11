@@ -31,7 +31,7 @@ class _ExampleGameState extends State<ExampleGame> {
   ui.Image? image;
   Timer? _locationTimer;
   Timer? _zoneCloseTimer;
-  Stopwatch gameTimer = Stopwatch();
+  DateTime? _gameStartedAt;
   late Replay _replay;
 
   final int updatesPerSecond = 1;
@@ -52,12 +52,6 @@ class _ExampleGameState extends State<ExampleGame> {
     widget.players.addPlayer(Player(id:"1", colour: Color.fromARGB(0, 12, 186, 192), name:"Player"));
     final player = widget.players.getPlayer(widget.playerID);
     if(player == null){return;}
-    _replay = Replay(
-      playerID: player.id,
-      playerName: player.name,
-      colour: player.colour,
-      timer: gameTimer,
-    );
     _init();
   }
 
@@ -68,7 +62,13 @@ class _ExampleGameState extends State<ExampleGame> {
 
     _startLocationUpdates();
     _startZoneClosing();
-    gameTimer.start();
+    _gameStartedAt = DateTime.now();
+    _replay = Replay(
+      playerID: widget.playerID,
+      playerName: widget.players.getPlayer(widget.playerID)!.name,
+      colour: widget.players.getPlayer(widget.playerID)!.colour,
+      gameStartedAt: _gameStartedAt,
+    );
 
     setState((){});
   }
@@ -118,7 +118,7 @@ class _ExampleGameState extends State<ExampleGame> {
         _closedFaces.add(randomFace);
         _closedFacesNotifier.value = List<Face>.from(_closedFaces);
 
-        _zoneClosings[randomFace.faceID] = gameTimer.elapsedMilliseconds / 1000.0;
+        _zoneClosings[randomFace.faceID] = DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0;
       },
     );
   }
@@ -149,7 +149,6 @@ class _ExampleGameState extends State<ExampleGame> {
 
     _locationTimer?.cancel();
     _zoneCloseTimer?.cancel();
-    _replay.stop();
 
     try {
       final replayFile = await ReplayFile.create(
@@ -180,7 +179,6 @@ class _ExampleGameState extends State<ExampleGame> {
   void dispose(){
     _locationTimer?.cancel();
     _zoneCloseTimer?.cancel();
-    _replay.stop();
     _currentZoneNotifier.dispose();
     _closedFacesNotifier.dispose();
     super.dispose();

@@ -111,6 +111,7 @@ class GameSocketService {
   JsonCallback? onMapData;                        // { map, faceOrder, closureIntervalMs, gracePeriodMs }
   JsonCallback? onPlayerRoleUpdated;              // { playerId, role }
   JsonCallback? onGameDisbanded;                  // { reason }
+  JsonCallback? onReplayReceived;                 // { playerId, replay }
   LocationBroadcastCallback? onLocationBroadcast; // { playerId: PlayerLocationInfo }
   ChatMessageCallback? onChatMessage;             // ChatMessage { playerId, playerName, text, timestamp, channel }
   ChatHistoryCallback? onChatHistory;             // (channel, List<ChatMessage>)
@@ -183,18 +184,19 @@ class GameSocketService {
     });
 
     _socket.on('game:map', (data) {
-      final d = Map<String, dynamic>.from(data);
-      onMapData?.call(d);
+      onMapData?.call(Map<String, dynamic>.from(data));
     });
 
     _socket.on('player:role:updated', (data) {
-      final d = Map<String, dynamic>.from(data);
-      onPlayerRoleUpdated?.call(d);
+      onPlayerRoleUpdated?.call(Map<String, dynamic>.from(data));
     });
 
     _socket.on('game:disbanded', (data) {
-      final d = Map<String, dynamic>.from(data);
-      onGameDisbanded?.call(d);
+      onGameDisbanded?.call(Map<String, dynamic>.from(data));
+    });
+
+    _socket.on('replay:received', (data) {
+      onReplayReceived?.call(Map<String, dynamic>.from(data));
     });
 
     _socket.on('location:broadcast', (data) {
@@ -207,8 +209,7 @@ class GameSocketService {
     });
 
     _socket.on('chat:message', (data) {
-      final d = Map<String, dynamic>.from(data);
-      onChatMessage?.call(ChatMessage.fromJson(d));
+      onChatMessage?.call(ChatMessage.fromJson(Map<String, dynamic>.from(data)));
     });
 
     _socket.on('chat:history', (data) {
@@ -350,6 +351,21 @@ class GameSocketService {
       'y': y,
       if (zone != null) 'zone': zone,
       'revealed': revealed,
+    });
+  }
+
+  void submitReplay(Map<String, dynamic> replayJson, {
+    required void Function(bool success) onResult,
+  }) {
+    if (!_connected) {
+      onResult(false);
+      return;
+    }
+    _socket.emitWithAck('replay:submit', {
+      'replay': replayJson,
+    }, ack: (response) {
+      final d = Map<String, dynamic>.from(response);
+      onResult(d['ok'] == true);
     });
   }
 

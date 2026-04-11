@@ -3,7 +3,7 @@ class Game {
     this.id = id;
     this.hostId = null;
     this.players = new Map(); // { playerId: Player }
-    this.status = "waiting"; // waiting or active or finished
+    this.status = "waiting"; // waiting or starting or active or finished
     this.createdAt = Date.now();
     this.startedAt = null;
     this.finishedAt = null;
@@ -35,6 +35,9 @@ class Game {
     };
 
     this._catchCounter = 0;
+
+    // Replay storage: { playerId: replayJson }
+    this.replays = new Map();
   }
 
   // --- Players ---
@@ -100,6 +103,19 @@ class Game {
       if (player.role === "runner") count++;
     }
     return count;
+  }
+
+  // --- Replays ---
+
+  storeReplay(playerId, replayData) {
+    this.replays.set(playerId, replayData);
+  }
+
+  getStoredReplays() {
+    return Array.from(this.replays.entries()).map(([playerId, data]) => ({
+      playerId,
+      data,
+    }));
   }
 
   // --- Chat ---
@@ -291,6 +307,8 @@ class Game {
       players: this.getPlayerList(),
       createdAt: this.createdAt,
       startedAt: this.startedAt,
+      finishedAt: this.finishedAt,
+      finishReason: this.finishReason,
       metadata: this.metadata,
     };
   }

@@ -6,19 +6,14 @@ import '../util/map_file_handler.dart';
 
 /// Streams the device's GPS location to the server at a fixed interval.
 ///
-/// This service keeps track of the latest position and sends it every 
-/// [sendIntervalMs] milliseconds. If the GPS has no position, nothing is 
-/// sent and the server will mark the player as "stale" after some time.
-///
-/// If the GPS stream errors out, the service will automatically retry.
-/// The service knows we are connected to a socket via notifySocketConnected()
-/// and notifySocketDisconnected(). We pause updates if we disconnect from socket.
-/// 
 /// Background service is covered with the foreground service
 /// notification in AndroidSettings.
 /// 
 /// Converts GPS coordinates to images coordinates using the map's
 /// image bounds and dimensions before sending.
+/// 
+/// For runners, performs zone detection and determines if the runner
+/// should be revealed to chasers based on zone closures and grace period.
 class LocationService {
   final GameSocketService gameSocketService;
   final int sendIntervalMs;
@@ -39,8 +34,10 @@ class LocationService {
   bool inGracePeriod = false;
 
   /// Get the current set of closed zone faceIDs.
-  /// Provided by the lobby screen which computes this from elapsed time.
   Set<int> Function()? getClosedZones;
+
+  /// Called each time a position is sent.
+  void Function(Offset position, int? zone, String role)? onFrameRecorded;
 
 
   /// This can act as a callback for logging in the game screen.
@@ -205,6 +202,8 @@ class LocationService {
             revealed: revealed,
           );
 
+          onFrameRecorded?.call(imageOffset, zone, role);
+
           _log('Sent position (${imageOffset.dx.toStringAsFixed(1)}, ${imageOffset.dy.toStringAsFixed(1)})'
               '${zone != null ? ' zone=$zone' : ''}'
               ' revealed=$revealed');
@@ -230,6 +229,7 @@ class LocationService {
     _retryCount = 0;
     _socketConnected = false;
     getClosedZones = null;
+    onFrameRecorded = null;
     inGracePeriod = false;
     _log('Location tracking stopped');
   }
