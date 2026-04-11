@@ -63,7 +63,7 @@ class _HoldButtonState extends State<HoldButton>
   }
 
   void _onUp(PointerEvent _) {
-    if (!_triggered) {
+    if (!_triggered && mounted) {
       _controller.reset();
     }
   }

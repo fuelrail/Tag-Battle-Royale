@@ -780,12 +780,25 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     Navigator.popUntil(context, (route) => route.isFirst);
   }
 
-  /// Show a confirmation box when leaving an active game.
+  /// Show a confirmation box when leaving a game.
   Future<bool> _confirmLeave() async {
     final String title;
     final String content;
 
-    if (_gameStarted) {
+    if (_gameFinished) {
+      if (isHost) {
+        title = 'Leave game?';
+        content = "This game's replay has not been generated.";
+      }
+      else if (!_replaySubmitted) {
+        title = 'Leave game?';
+        content = 'Your replay has not been sent.';
+      }
+      else {
+        // Player's replay was sent, just leave
+        return true;
+      }
+    } else if (_gameStarted) {
       title = 'Leave game?';
       content = 'You will be marked as disconnected. You can reconnect later from the main menu.';
     } else if (isHost) {
@@ -826,7 +839,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     if (_gameFinished) {
       final String message;
       final Color color;
-    
+
       if (isHost) {
         final allReceived = _receivedReplays.length >= _players.length;
         message = allReceived ? 'All Replays Received.' : 'Receiving Replays...';
@@ -835,11 +848,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         message = _replaySubmitted ? 'Replay Sent.' : 'Sending Replay...';
         color = _replaySubmitted ? Colors.green : Colors.amber.shade700;
       }
-    
+
       final String finishMessage = _finishReason == 'host_ended'
           ? 'Game ended by host'
           : 'All runners have been caught!';
-    
+
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
@@ -1045,7 +1058,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                       width: 4,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: player.connected ? colour : Colors.grey.shade300,
+                        color: colour,
                         borderRadius: const BorderRadius.only(
                           topLeft: Radius.circular(12),
                           bottomLeft: Radius.circular(12),
@@ -1080,7 +1093,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       );
     }
 
-  // Normal (non-finished) player list
+  // Normal (non-finished game) player list
   Widget _buildActivePlayerList() {
     return Scrollbar(
       thumbVisibility: true,
@@ -1561,12 +1574,22 @@ Widget _buildLobbyTopSection(BuildContext context) {
       child: LobbyLayout(
         key: _lobbyKey,
         title: _gameFinished
-          ? 'Game Ended'
-          : _gameStarted
-              ? '${isHost ? "Host" : "Player"}: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}'
-              : _gameId != null
-                  ? 'Lobby: $_gameId'
-                  : 'Connecting...',
+            ? const Text('Game Ended')
+            : _gameStarted
+                ? Text.rich(TextSpan(children: [
+                    TextSpan(text: '${widget.playerName}: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}'),
+                    if (isHost)
+                      TextSpan(
+                        text: ' (host)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ]))
+                : _gameId != null
+                    ? Text('Lobby: $_gameId')
+                    : const Text('Connecting...'),
         isConnected: _status == 'Connected',
         players: _players,
         chatMessages: _chatMessages,

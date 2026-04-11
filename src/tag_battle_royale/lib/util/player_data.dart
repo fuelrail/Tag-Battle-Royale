@@ -32,7 +32,7 @@ class PlayerData {
 
   ///Host = purple, Chaser = red, Runner = black.
   Color get nameColour {
-    if (isHost) return Colors.purple;
+    if (isHost) return Colors.blue;
     if (role == 'chaser') return Colors.red;
     return Colors.black;
   }

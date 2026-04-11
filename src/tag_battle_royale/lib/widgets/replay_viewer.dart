@@ -424,7 +424,7 @@ class _ReplayViewerState extends State<ReplayViewer> {
                                               const SizedBox(width: 10),
                                               Expanded(
                                                 child: Text(
-                                                  replay.playerName,
+                                                  '${replay.playerName} (${replay.playerID.length > 8 ? replay.playerID.substring(0, 8) : replay.playerID})',
                                                   style: const TextStyle(
                                                     color: Colors.black,
                                                     fontSize: 14,
