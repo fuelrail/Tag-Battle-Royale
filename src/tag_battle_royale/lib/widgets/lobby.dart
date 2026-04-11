@@ -1,46 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '/services/game_socket_service.dart';
-
-// --- Player data ---
-
-class PlayerData {
-  final String id;
-  final String name;
-  String role; // runner or chaser
-  bool isHost;
-  bool connected;
-
-  PlayerData({
-    required this.id,
-    required this.name,
-    this.role = 'runner',
-    this.isHost = false,
-    this.connected = true,
-  });
-
-  // Host = purple, Chaser = red, Runner = black.
-  Color get nameColour {
-    if (isHost) return Colors.purple;
-    if (role == 'chaser') return Colors.red;
-    return Colors.black;
-  }
-}
-
-// --- Colour palette ---
-
-const List<Color> _playerColours = [
-  Colors.red,
-  Colors.blue,
-  Colors.green,
-  Colors.orange,
-  Colors.purple,
-  Colors.teal,
-  Colors.pink,
-  Colors.indigo,
-  Colors.amber,
-  Colors.cyan,
-];
+import '../util/player_data.dart';
 
 
 class LobbyLayout extends StatefulWidget {
@@ -90,6 +51,10 @@ class LobbyLayoutState extends State<LobbyLayout> {
   List<ChatMessage> get _activeMessages =>
       widget.chatMessages[widget.activeChannel] ?? [];
 
+  void switchToGameTab() {
+    setState(() => _currentTab = 2);
+  }
+
   // When state changes this is called, check last message count with current,
   // if there is a difference, scroll chat to bottom
   @override
@@ -113,7 +78,7 @@ class LobbyLayoutState extends State<LobbyLayout> {
   Color _getPlayerColour(String playerId) {
     return widget.playerColourMap.putIfAbsent(
       playerId,
-      () => _playerColours[widget.playerColourMap.length % _playerColours.length],
+      () => playerColours[widget.playerColourMap.length % playerColours.length],
     );
   }
 

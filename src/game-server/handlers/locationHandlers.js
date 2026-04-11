@@ -12,13 +12,13 @@ function registerLocationHandlers(io, socket, gameManager) {
   socket.on("location:update", (data) => {
     const player = gameManager.getPlayerBySocketId(socket.id);
     if (!player) {
-      console.log(`[location:update] Rejected — socket ${socket.id} not in a game`);
+      console.log(`[location:update] Rejected, socket ${socket.id} not in a game`);
       return;
     }
 
     const game = gameManager.getGame(player.gameId);
-    if (!game || game.status !== "active") {
-      console.log(`[location:update] Rejected — game ${player.gameId} not active (status: ${game?.status})`);
+    if (!game || game?.status === "waiting") {
+      console.log(`[location:update] Rejected, game ${player.gameId} not active (status: ${game?.status})`);
       return;
     }
 
@@ -29,7 +29,7 @@ function registerLocationHandlers(io, socket, gameManager) {
     }
 
     if (typeof data.x !== "number" || typeof data.y !== "number") {
-      console.log(`[location:update] Rejected — invalid x/y from "${player.name}" (${player.id})`);
+      console.log(`[location:update] Rejected, invalid x/y from "${player.name}" (${player.id})`);
       return socket.emit("error", {
         event: "location:update",
         message: "x and y are required numbers",

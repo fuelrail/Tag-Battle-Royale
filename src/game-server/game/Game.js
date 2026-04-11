@@ -6,6 +6,8 @@ class Game {
     this.status = "waiting"; // waiting or active or finished
     this.createdAt = Date.now();
     this.startedAt = null;
+    this.finishedAt = null;
+    this.finishReason = null; // "all_caught" or "host_ended"
     this.maxPlayers = config.maxPlayers || 10;
     this.metadata = config.metadata || {};
 
@@ -19,8 +21,9 @@ class Game {
     // Map transfer
     this.mapData = null;
     this.mapConfirmations = new Set(); // playerIds that confirmed receival
+
     // Zone closure
-    this.faceOrder = [];        // ordered list of faceIDs
+    this.faceOrder = []; // ordered list of faceIDs
     this.closureIntervalMs = null;
     this.gracePeriodMs = null;
 
@@ -30,6 +33,8 @@ class Game {
       runner: [],
       chaser: [],
     };
+
+    this._catchCounter = 0;
   }
 
   // --- Players ---
@@ -73,6 +78,28 @@ class Game {
 
   getPlayerList() {
     return Array.from(this.players.values()).map((p) => p.toJSON());
+  }
+
+
+  // --- Catch tracking ---
+
+  /// Mark a player as caught. Returns the catch order number.
+  markCaught(playerId) {
+    const player = this.getPlayer(playerId);
+    if (!player) return null;
+    this._catchCounter++;
+    player.caughtOrder = this._catchCounter;
+    player.caughtAt = Date.now();
+    return this._catchCounter;
+  }
+
+  /// Returns the number of remaining runners.
+  getRemainingRunnerCount() {
+    let count = 0;
+    for (const player of this.players.values()) {
+      if (player.role === "runner") count++;
+    }
+    return count;
   }
 
   // --- Chat ---
@@ -193,6 +220,7 @@ class Game {
   }
 
   // --- Broadcasting ---
+
   startBroadcasting(callback) {
     this._broadcastCallback = callback;
 
@@ -219,6 +247,7 @@ class Game {
   }
 
   // --- Game life ---
+
   start(broadcastCallback) {
     this.status = "active";
     this.startedAt = Date.now();
@@ -236,6 +265,16 @@ class Game {
     }
   }
 
+  /// Finish the game but keep broadcasting so players can find each other.
+  finishGame(reason) {
+    this.status = "finished";
+    this.finishedAt = Date.now();
+    this.finishReason = reason;
+    // Don't stop broadcasting, all players are chasers now and
+    // can use the map to find each other.
+  }
+
+  /// Removes the game entirely.
   finish() {
     this.status = "finished";
     this.finishedAt = Date.now();

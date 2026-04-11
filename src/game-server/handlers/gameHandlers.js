@@ -27,7 +27,7 @@
 //   game:started           { gameId, startedAt }
 //   game:disbanded         { reason }
 //   chat:history           { channel, messages }
-//   location:broadcast     (per-socket filtered payload)
+//   location:broadcast     (per-socket payload)
 //   error                  { event, message }
 //
 
@@ -48,6 +48,23 @@ function makeBroadcastCallback(io, game) {
       io.to(socketId).emit("location:broadcast", payload);
     }
   };
+}
+
+/// Check if all runners are caught. If so, finish the game.
+function _checkGameOver(io, game) {
+  if (game.status !== "active") return;
+  if (game.getRemainingRunnerCount() > 0) return;
+
+  game.finishGame("all_caught");
+
+  io.to(game.id).emit("game:finished", {
+    gameId: game.id,
+    reason: "all_caught",
+    finishedAt: game.finishedAt,
+    players: game.getPlayerList(),
+  });
+
+  console.log(`[game:finished] Game ${game.id} finished, all runners caught`);
 }
 
 
@@ -185,7 +202,7 @@ function registerGameHandlers(io, socket, gameManager) {
 
       // Restart broadcasting if it was stopped due to all players disconnecting
       // and grace period is over
-      if (game.status === "active" && !game._broadcastTimer && !game.inGracePeriod) {
+      if ((game.status === "active" || game.status === "finished") && !game._broadcastTimer && !game.inGracePeriod) {
         game.startBroadcasting(makeBroadcastCallback(io, game));
         console.log(`[game:rejoin] Restarted broadcast for game ${game.id}`);
       }
@@ -288,9 +305,14 @@ function registerGameHandlers(io, socket, gameManager) {
     }
 
     const gracePeriodMs = data.gracePeriodMs;
-    if (typeof gracePeriodMs !== "number" || gracePeriodMs <= 0) {
+    if (typeof gracePeriodMs !== "number" || gracePeriodMs < 0) {
       return emitError(socket, callback, "game:start", "Grace period is required");
     }
+
+    //const runnerCount = Array.from(game.players.values()).filter(p => p.role === "runner").length;
+    //if (runnerCount === 0) {
+    //  return emitError(socket, callback, "game:start", "At least one runner is required to start");
+    //}
 
     console.log(`[game:start] Game ${game.id} starting with ${game.getConnectedPlayerCount()} connected players (triggered by socket ${socket.id})`);
 
@@ -368,7 +390,16 @@ function registerGameHandlers(io, socket, gameManager) {
 
     const oldRole = targetPlayer.role;
     targetPlayer.role = role;
-    console.log(`[player:role] ${targetPlayer.name} (${targetPlayer.id}) role changed to ${role} in game ${game.id}`);
+
+    // Track catch order when a runner becomes a chaser
+    if (oldRole === "runner" && role === "chaser") {
+      game.markCaught(playerId);
+      console.log(`[player:role] ${targetPlayer.name} caught (#${targetPlayer.caughtOrder}) in game ${game.id}`);
+    } else {
+      targetPlayer.caughtOrder = null;
+      targetPlayer.caughtAt = null;
+      console.log(`[player:role] ${targetPlayer.name} role changed from ${oldRole} to ${role} in game ${game.id}`);
+    }
 
     if (callback) callback({ ok: true });
 
@@ -382,6 +413,54 @@ function registerGameHandlers(io, socket, gameManager) {
     if (oldRole !== role && game.status !== "waiting" && targetPlayer.connected) {
       sendChatHistory(io.sockets.sockets.get(targetPlayer.socketId), game, [role]);
     }
+
+    // Check if all runners are caught
+    _checkGameOver(io, game);
+  });
+
+  // --- Host end game ---
+
+  socket.on("game:end", (_, callback) => {
+    const playerInfo = gameManager.getPlayerBySocketId(socket.id);
+    if (!playerInfo) {
+      return emitError(socket, callback, "game:end", "Not in a game");
+    }
+
+    const game = gameManager.getGame(playerInfo.gameId);
+    if (!game) {
+      return emitError(socket, callback, "game:end", "Game not found");
+    }
+
+    if (playerInfo.id !== game.hostId) {
+      return emitError(socket, callback, "game:end", "Only the host can end the game");
+    }
+
+    if (game.status !== "active") {
+      return emitError(socket, callback, "game:end", "Game is not active");
+    }
+
+    console.log(`[game:end] Host ending game ${game.id}`);
+
+    // Switch all remaining runners to chasers (without catch order)
+    for (const [id, player] of game.players) {
+      if (player.role === "runner") {
+        player.role = "chaser";
+        console.log(`[game:end] ${player.name} force-switched to chaser`);
+      }
+    }
+
+    game.finishGame("host_ended");
+
+    if (callback) callback({ ok: true });
+
+    io.to(game.id).emit("game:finished", {
+      gameId: game.id,
+      reason: "host_ended",
+      finishedAt: game.finishedAt,
+      players: game.getPlayerList(),
+    });
+
+    console.log(`[game:end] Game ${game.id} finished, host ended`);
   });
 
   // Re-check map confirmations if a player disconnects during starting phase
@@ -418,7 +497,7 @@ function _finishStarting(io, game, gameManager) {
     startedAt: game.startedAt,
   });
   console.log(`[game:start] Game ${game.id} started, broadcast tick running every ${game.broadcastIntervalMs}ms`);
-  console.log(`[game:start] game: ${game.id} faceOrder: ${JSON.stringify(game.faceOrder)} closureIntervalMs: ${game.closureIntervalMs}`);
+  console.log(`[game:start] game: ${game.id} faceOrder: ${JSON.stringify(game.faceOrder)} closureIntervalMs: ${game.closureIntervalMs} grace period: ${game.gracePeriodMs / 1000}s`);
 }
 
 function emitError(socket, callback, event, message) {

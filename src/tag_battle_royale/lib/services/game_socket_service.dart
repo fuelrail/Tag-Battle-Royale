@@ -103,6 +103,7 @@ class GameSocketService {
   JsonCallback? onPlayerJoined;                   // { playerId, playerName, players: [...] }
   JsonCallback? onPlayerLeft;                     // { playerId, playerName, remainingPlayers: [...] }
   JsonCallback? onGameStarted;                    // { gameId, startedAt }
+  JsonCallback? onGameFinished;                   // { gameId, reason, finishedAt, players }
   ErrorCallback? onError;                         // (event, message)
   JsonCallback? onPlayerReconnected;              // { playerId, playerName, players }
   JsonCallback? onPlayerDisconnected;             // { playerId, playerName, players }
@@ -175,6 +176,10 @@ class GameSocketService {
 
     _socket.on('game:started', (data) {
       onGameStarted?.call(Map<String, dynamic>.from(data));
+    });
+
+    _socket.on('game:finished', (data) {
+      onGameFinished?.call(Map<String, dynamic>.from(data));
     });
 
     _socket.on('game:map', (data) {
@@ -302,6 +307,15 @@ class GameSocketService {
     _socket.emit('game:leave');
     currentGameId = null;
     currentPlayerId = null;
+  }
+
+  void endGame() {
+    _socket.emitWithAck('game:end', {}, ack: (response) {
+      final d = Map<String, dynamic>.from(response);
+      if (d['ok'] != true) {
+        onError?.call('game:end', d['error'] ?? 'Unknown error');
+      }
+    });
   }
 
   void switchPlayerRole(String playerId, String role) {

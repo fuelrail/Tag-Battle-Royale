@@ -9,6 +9,7 @@ import 'package:nearby_connections/nearby_connections.dart';
 
 import '../services/game_socket_service.dart'; 
 import '../util/map_file_handler.dart';
+import '../util/player_data.dart';
 import '../main.dart';
 import '../widgets/lobby.dart';
 import '../widgets/map_selector.dart';

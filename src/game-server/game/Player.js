@@ -12,6 +12,8 @@ class Player {
     this.revealed = false; // whether chasers can see this runner
     this.connected = true;
     this.disconnectedAt = null; // timestamp of last disconnect
+    this.caughtOrder = null; // order in which this runner was caught, 1 = first caught
+    this.caughtAt = null;    // timestamp when caught
   }
 
   updateLocation(data) {
@@ -21,9 +23,8 @@ class Player {
       y: data.y,
       timestamp: now,
     };
-    // Only runners send zone info, chasers leave it null
-    this.zone = data.zone ?? null;
-    this.revealed = data.revealed ?? false;
+    this.zone = data.zone;
+    this.revealed = data.revealed;
     this.lastUpdateAt = now;
   }
 
@@ -49,6 +50,8 @@ class Player {
       connected: this.connected,
       location: this.location,
       connectedAt: this.connectedAt,
+      caughtOrder: this.caughtOrder,
+      caughtAt: this.caughtAt,
     };
   }
 }
