@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
-import '../util/replay/replay_file_handler.dart';
 import '../util/replay/replay.dart';
+import '../util/replay/replay_file_handler.dart';
 import '../util/mapPainter/map_painter.dart';
-import '../util/mapPainter/user_painter.dart';
+import '../util/faceDetection/face_detection_graph.dart';
 import '../widgets/map_transform.dart';
 import '../widgets/TabButton.dart';
 
@@ -24,31 +24,38 @@ class ReplayViewer extends StatefulWidget {
 }
 
 class _ReplayViewerState extends State<ReplayViewer> {
-	Timer? _timer;
+  Timer? _timer;
 
-	bool showLabel = true;
-	bool _isPlaying = false;
-	bool _bottomBarCollapsed = false;
-	BottomTab _activeTab = BottomTab.replay;
+  final ValueNotifier<double> _currentTime = ValueNotifier<double>(0.0);
 
-	double _currentTime = 0.0;
-	final double _updatesPerSecond = 30.0;
-	final double _playbackSpeed = 1.0;
+  bool showLabel = true;
+  bool _isPlaying = false;
+  bool _bottomBarCollapsed = false;
+  BottomTab _activeTab = BottomTab.replay;
 
-	late Set<String> _selectedPlayerIds;
+  final double _updatesPerSecond = 30.0;
+  final double _playbackSpeed = 1.0;
 
-	double get _maxTime {
-		double maxTime = 0.0;
-		for(final replay in widget.replayFile.replays){
-			if(replay.positions.isNotEmpty){
-				final replayEnd = replay.positions.last.time;
-				if(replayEnd > maxTime){
-				maxTime = replayEnd;
-				}
-			}
-		}
-		return maxTime;
-	}
+  late Set<String> _selectedPlayerIds;
+
+  double get _maxTime {
+    double maxTime = 0.0;
+
+    for(final replay in widget.replayFile.replays){
+      if(replay.positions.isNotEmpty){
+        final replayEnd = replay.positions.last.time;
+        if(replayEnd > maxTime){
+          maxTime = replayEnd;
+        }
+      }
+    }
+    for(final closingTime in widget.replayFile.zoneClosings.values){
+      if(closingTime > maxTime){
+        maxTime = closingTime;
+      }
+    }
+    return maxTime;
+  }
 
   @override
   void initState(){
@@ -59,44 +66,49 @@ class _ReplayViewerState extends State<ReplayViewer> {
   @override
   void dispose(){
     _timer?.cancel();
+    _currentTime.dispose();
     super.dispose();
   }
 
   void _play(){
     if(_isPlaying) return;
     if(_maxTime <= 0) return;
+
     _timer?.cancel();
-    setState(()=> _isPlaying = true);
-    _timer = Timer.periodic(Duration(milliseconds: (1000 / _updatesPerSecond).round()),(_){
-			if(!mounted) return;
-			final nextTime = _currentTime + ((1 / _updatesPerSecond) * _playbackSpeed);
-			if(nextTime >= _maxTime){
-				_timer?.cancel();
-				_timer = null;
-				setState((){
-					_currentTime = _maxTime;
-					_isPlaying = false;
-				});
-				return;
-			}
-			setState(()=> _currentTime = nextTime);
-    });
+    setState(() => _isPlaying = true);
+    _timer = Timer.periodic(
+      Duration(milliseconds: (1000 / _updatesPerSecond).round()),
+      (_){
+        if(!mounted) return;
+
+        final nextTime = _currentTime.value + ((1 / _updatesPerSecond) * _playbackSpeed);
+        if(nextTime >= _maxTime){
+          _timer?.cancel();
+          _timer = null;
+          _currentTime.value = _maxTime;
+
+          if(mounted){
+            setState(() => _isPlaying = false);
+          }
+          return;
+        }
+        _currentTime.value = nextTime;
+      },
+    );
   }
 
   void _pause(){
     _timer?.cancel();
     _timer = null;
     if(!mounted) return;
-    setState(()=> _isPlaying = false);
+    setState(() => _isPlaying = false);
   }
 
   void _reset(){
     _timer?.cancel();
     _timer = null;
-    setState((){
-      _isPlaying = false;
-      _currentTime = 0.0;
-    });
+    _currentTime.value = 0.0;
+    setState(() =>_isPlaying = false);
   }
 
   void _togglePlayPause(){
@@ -118,7 +130,7 @@ class _ReplayViewerState extends State<ReplayViewer> {
   }
 
   void _collapseBottomBar(){
-    setState(()=> _bottomBarCollapsed = true);
+    setState(() => _bottomBarCollapsed = true);
   }
 
   void _openTab(BottomTab tab){
@@ -127,15 +139,18 @@ class _ReplayViewerState extends State<ReplayViewer> {
       _activeTab = tab;
     });
   }
-	// used to smooth between two positions
+
   ui.Offset? _getPositionAtTime(Replay replay, double time){
     if(replay.positions.isEmpty) return null;
+
     if(time <= replay.positions.first.time){
       return replay.positions.first.position;
     }
+
     if(time >= replay.positions.last.time){
       return replay.positions.last.position;
     }
+
     for(int i = 0; i < replay.positions.length - 1; i++){
       final a = replay.positions[i];
       final b = replay.positions[i + 1];
@@ -152,298 +167,514 @@ class _ReplayViewerState extends State<ReplayViewer> {
     return replay.positions.last.position;
   }
 
+  List<Face> _getClosedFacesAtTime(double time){
+    final closedIds = widget.replayFile.getClosedZoneIdsAtTime(time).toSet();
+    return widget.replayFile.map.graph.faces.where((face){
+      return closedIds.contains(face.faceID);
+    }).toList();
+  }
+
+  String _formatTime(double seconds){
+    final totalSeconds = seconds.floor();
+    final mins = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final secs = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$mins:$secs';
+  }
+
   @override
-	Widget build(BuildContext context){
-		final imageSize = Size(
-			widget.image.width.toDouble(),
-			widget.image.height.toDouble(),
-		);
+  Widget build(BuildContext context){
+    final imageSize = Size(
+      widget.image.width.toDouble(),
+      widget.image.height.toDouble(),
+    );
+    final selectedReplays = widget.replayFile.replays.where(
+      (replay) => _selectedPlayerIds.contains(replay.playerID),
+    ).toList();
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: Text(widget.replayFile.replayName),
+        titleTextStyle: const TextStyle(
+          color: Colors.white,
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+        ),
+        iconTheme: const IconThemeData(
+          color: Colors.white,
+        ),
+        backgroundColor: const Color.fromARGB(80, 0, 0, 0),
+        elevation: 0,
+      ),
+      body: Stack(
+        children: [
+          MapTransform(
+            image: widget.image,
+            child: Stack(
+              children: [
+                RepaintBoundary(
+                  child: CustomPaint(
+                    size: imageSize,
+                    painter: MapPainter(
+                      image: widget.image,
+                      map: widget.replayFile.map,
+                      drawMode: false,
+                      drawLabel: true,
+                    ),
+                  ),
+                ),
+                ValueListenableBuilder<double>(
+                  valueListenable: _currentTime,
+                  builder: (context, time, _){
+                    final closedFaces = _getClosedFacesAtTime(time);
 
-		final selectedReplays = widget.replayFile.replays.where(
-			(replay) => _selectedPlayerIds.contains(replay.playerID),
-		);
+                    return RepaintBoundary(
+                      child: CustomPaint(
+                        size: imageSize,
+                        painter: ClosedZoneReplayPainter(
+                          faces: closedFaces,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                ValueListenableBuilder<double>(
+                  valueListenable: _currentTime,
+                  builder: (context, time, _){
+                    final playerDrawData = selectedReplays.map((replay){
+                      return ReplayPlayerDrawData(
+                        position: _getPositionAtTime(replay, time),
+                        colour: replay.colour,
+                        label: replay.playerName,
+                      );
+                    }).toList();
 
-		return Scaffold(
-			extendBodyBehindAppBar: true,
-			appBar: AppBar(
-				title: Text(widget.replayFile.replayName),
-				titleTextStyle: const TextStyle(
-					color: Colors.white,
-					fontSize: 20,
-					fontWeight: FontWeight.w600,
-				),
-				iconTheme: const IconThemeData(
-					color: Colors.white,
-				),
-				backgroundColor: const Color.fromARGB(80, 0, 0, 0),
-				elevation: 0,
-			),
-			body: Stack(
-				children: [
-					// map image
-					MapTransform(
-						image: widget.image,
-						child: Stack(
-							children: [
-								CustomPaint(
-									size: imageSize,
-									painter: MapPainter(
-										image: widget.image,
-										map: widget.replayFile.map,
-										drawMode: false,
-										drawLabel: true,
-									),
-								),
-								// draw players
-								...selectedReplays.map((replay){
-									final position = _getPositionAtTime(replay, _currentTime);
-									if(position == null) return const SizedBox.shrink();
-									return CustomPaint(
-										size: imageSize,
-										painter: UserPainter(
-											position: position,
-											colour: replay.colour,
-											label: replay.playerName,
-											showLabel: showLabel,
-										),
-									);
-								}),
-							],
-						),
-					),
-					Positioned(
-						left: 0,
-						right: 0,
-						bottom: 0,
-						child: _bottomBarCollapsed ?
-						// tabs when collapsed
-							SafeArea(
-								top: false,
-								child: Padding(
-									padding: const EdgeInsets.only(left: 0, right: 0, bottom: 0),
-									child: Row(
-										mainAxisSize: MainAxisSize.min,
-										children: [
-											TabButton(
-												icon: Icons.add,
-												selected: false,
-												onTap: () => _openTab(_activeTab),
-											),
-											TabButton(
-												icon: Icons.play_arrow,
-												selected: false,
-												onTap: () => _openTab(BottomTab.replay),
-											),
-											TabButton(
-												icon: Icons.people,
-												selected: false,
-												onTap: () => _openTab(BottomTab.players),
-											),
-											TabButton(
-												icon: Icons.settings,
-												selected: false,
-												onTap: () => _openTab(BottomTab.settings),
-											),
-										],
-									),
-								),
-							) :
-							// when tab up
-							Stack(
-								clipBehavior: Clip.none,
-								children: [
-									Container(
-										margin: const EdgeInsets.only(top: 20),
-										padding: EdgeInsets.fromLTRB(
-											12,
-											18,
-											12,
-											MediaQuery.of(context).padding.bottom + 10,
-										),
-										decoration: const BoxDecoration(
-											color: Colors.white,
-											borderRadius: BorderRadius.vertical(
-												top: Radius.circular(20),
-											),
-										),
-										child: Column(
-											mainAxisSize: MainAxisSize.min,
-											children: [
-												// replay tab
-												if(_activeTab == BottomTab.replay)
-													Row(
-														children: [
-															IconButton(
-																onPressed: _reset,
-																icon: const Icon(Icons.replay, color: Colors.black),
-															),
-															IconButton(
-																onPressed: _togglePlayPause,
-																icon: Icon(
-																	_isPlaying ? Icons.pause : Icons.play_arrow,
-																	color: Colors.black,
-																),
-															),
-															Expanded(
-																child: SliderTheme(
-																	data: SliderTheme.of(context).copyWith(
-																		trackHeight: 4,
-																		thumbShape: const RoundSliderThumbShape(
-																			enabledThumbRadius: 7,
-																		),
-																		overlayShape: const RoundSliderOverlayShape(
-																			overlayRadius: 14,
-																		),
-																	),
-																	child: Slider(
-																		value: _currentTime.clamp(
-																			0.0,
-																			_maxTime == 0 ? 1.0 : _maxTime,
-																		),
-																		min: 0.0,
-																		max: _maxTime == 0 ? 1.0 : _maxTime,
-																		onChanged: (value){
-																			setState(()=> _currentTime = value);
-																		},
-																	),
-																),
-															),
-														],
-													),
-												// players tab
-												if(_activeTab == BottomTab.players)
-													Column(
-														mainAxisSize: MainAxisSize.min,
-														children: widget.replayFile.replays.map((replay){
-															final selected = _selectedPlayerIds.contains(replay.playerID);
-															return Padding(
-																padding: const EdgeInsets.symmetric(vertical: 4),
-																child: Container(
-																	padding: const EdgeInsets.symmetric(
-																		horizontal: 10,
-																		vertical: 8,
-																	),
-																	decoration: BoxDecoration(
-																		color: const Color.fromARGB(20, 0, 0, 0),
-																		borderRadius: BorderRadius.circular(12),
-																	),
-																	child: InkWell(
-																		borderRadius: BorderRadius.circular(12),
-																		onTap: (){
-																			_togglePlayerSelection(replay.playerID);
-																		},
-																		child: Row(
-																			children: [
-																				Container(
-																					width: 14,
-																					height: 14,
-																					decoration: BoxDecoration(
-																						color: replay.colour,
-																						shape: BoxShape.circle,
-																					),
-																				),
-																				const SizedBox(width: 10),
-																				Expanded(
-																					child: Text(
-																						replay.playerName,
-																						style: const TextStyle(
-																							color: Colors.black,
-																							fontSize: 14,
-																						),
-																					),
-																				),
-																				Checkbox(
-																					value: selected,
-																					onChanged: (_){
-																						_togglePlayerSelection(replay.playerID);
-																					},
-																				),
-																			],
-																		),
-																	),
-																),
-															);
-														}).toList(),
-													),
-												// settings tab
-												if(_activeTab == BottomTab.settings)
-													Column(
-														mainAxisSize: MainAxisSize.min,
-														children: [
-															Container(
-																padding: const EdgeInsets.symmetric(
-																	horizontal: 10,
-																	vertical: 8,
-																),
-																decoration: BoxDecoration(
-																	color: const Color.fromARGB(20, 0, 0, 0),
-																	borderRadius: BorderRadius.circular(12),
-																),
-																child: Row(
-																	children: [
-																		const Expanded(
-																			child: Text(
-																				'Show labels',
-																				style: TextStyle(
-																					color: Colors.black,
-																					fontSize: 14,
-																				),
-																			),
-																		),
-																		Checkbox(
-																			value: showLabel,
-																			onChanged: (value){
-																				setState(()=> showLabel = value ?? true);
-																			},
-																		),
-																	],
-																),
-															),
-														],
-													),
-											],
-										),
-									),
-									// tabs on the open mode
-									Positioned(
-										top: 0,
-										left: 0,
-										child: Row(
-											children: [
-												TabButton(
-													icon: Icons.remove,
-													selected: false,
-													onTap: _collapseBottomBar,
-												),
-												TabButton(
-													icon: Icons.play_arrow,
-													selected: _activeTab == BottomTab.replay,
-													onTap: () => _openTab(BottomTab.replay),
-												),
-												TabButton(
-													icon: Icons.people,
-													selected: _activeTab == BottomTab.players,
-													onTap: () => _openTab(BottomTab.players),
-												),
-												TabButton(
-													icon: Icons.settings,
-													selected: _activeTab == BottomTab.settings,
-													onTap: () => _openTab(BottomTab.settings),
-												),
-											],
-										),
-									),
-								],
-							),
-					),
-				],
-			),
-		);
-	}
+                    return RepaintBoundary(
+                      child: CustomPaint(
+                        size: imageSize,
+                        painter: ReplayPlayersPainter(
+                          players: playerDrawData,
+                          showLabel: showLabel,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: RepaintBoundary(
+              child: _bottomBarCollapsed
+                  ? SafeArea(
+                      top: false,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TabButton(
+                            icon: Icons.add,
+                            selected: false,
+                            onTap: () => _openTab(_activeTab),
+                          ),
+                          TabButton(
+                            icon: Icons.play_arrow,
+                            selected: false,
+                            onTap: () => _openTab(BottomTab.replay),
+                          ),
+                          TabButton(
+                            icon: Icons.people,
+                            selected: false,
+                            onTap: () => _openTab(BottomTab.players),
+                          ),
+                          TabButton(
+                            icon: Icons.settings,
+                            selected: false,
+                            onTap: () => _openTab(BottomTab.settings),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(top: 20),
+                          padding: EdgeInsets.fromLTRB(
+                            12,
+                            18,
+                            12,
+                            MediaQuery.of(context).padding.bottom + 10,
+                          ),
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(20),
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if(_activeTab == BottomTab.replay)
+                                Column(
+                                  children: [
+                                    Row(
+                                      children: [
+                                        IconButton(
+                                          onPressed: _reset,
+                                          icon: const Icon(
+                                            Icons.replay,
+                                            color: Colors.black,
+                                          ),
+                                        ),
+                                        IconButton(
+                                          onPressed: _togglePlayPause,
+                                          icon: Icon(
+                                            _isPlaying ? Icons.pause : Icons.play_arrow,
+                                            color: Colors.black,
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: ValueListenableBuilder<double>(
+                                            valueListenable: _currentTime,
+                                            builder: (context, time, _){
+                                              return SliderTheme(
+                                                data: SliderTheme.of(context).copyWith(
+                                                  trackHeight: 4,
+                                                  thumbShape:
+                                                      const RoundSliderThumbShape(
+                                                    enabledThumbRadius: 7,
+                                                  ),
+                                                  overlayShape:
+                                                      const RoundSliderOverlayShape(
+                                                    overlayRadius: 14,
+                                                  ),
+                                                ),
+                                                child: Slider(
+                                                  value: time.clamp(
+                                                    0.0,
+                                                    _maxTime == 0 ? 1.0 : _maxTime,
+                                                  ),
+                                                  min: 0.0,
+                                                  max: _maxTime == 0 ? 1.0 : _maxTime,
+                                                  onChanged: (value){
+                                                    _currentTime.value = value;
+                                                  },
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                      ),
+                                      child: ValueListenableBuilder<double>(
+                                        valueListenable: _currentTime,
+                                        builder: (context, time, _){
+                                          return Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(_formatTime(time)),
+                                              Text(_formatTime(_maxTime)),
+                                            ],
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              if(_activeTab == BottomTab.players)
+                                Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: widget.replayFile.replays.map((replay){
+                                    final selected =
+                                        _selectedPlayerIds.contains(replay.playerID);
+
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 4),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color.fromARGB(20, 0, 0, 0),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: InkWell(
+                                          borderRadius: BorderRadius.circular(12),
+                                          onTap: (){
+                                            _togglePlayerSelection(replay.playerID);
+                                          },
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                width: 14,
+                                                height: 14,
+                                                decoration: BoxDecoration(
+                                                  color: replay.colour,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 10),
+                                              Expanded(
+                                                child: Text(
+                                                  replay.playerName,
+                                                  style: const TextStyle(
+                                                    color: Colors.black,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                              ),
+                                              Checkbox(
+                                                value: selected,
+                                                onChanged: (_){
+                                                  _togglePlayerSelection(
+                                                    replay.playerID,
+                                                  );
+                                                },
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              if(_activeTab == BottomTab.settings)
+                                Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color.fromARGB(20, 0, 0, 0),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Expanded(
+                                            child: Text(
+                                              'Show labels',
+                                              style: TextStyle(
+                                                color: Colors.black,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ),
+                                          Checkbox(
+                                            value: showLabel,
+                                            onChanged: (value){
+                                              setState(
+                                                () => showLabel = value ?? true,
+                                              );
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        ),
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          child: Row(
+                            children: [
+                              TabButton(
+                                icon: Icons.remove,
+                                selected: false,
+                                onTap: _collapseBottomBar,
+                              ),
+                              TabButton(
+                                icon: Icons.play_arrow,
+                                selected: _activeTab == BottomTab.replay,
+                                onTap: () => _openTab(BottomTab.replay),
+                              ),
+                              TabButton(
+                                icon: Icons.people,
+                                selected: _activeTab == BottomTab.players,
+                                onTap: () => _openTab(BottomTab.players),
+                              ),
+                              TabButton(
+                                icon: Icons.settings,
+                                selected: _activeTab == BottomTab.settings,
+                                onTap: () => _openTab(BottomTab.settings),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 enum BottomTab {
   replay,
   players,
-  settings
+  settings,
+}
+
+class ReplayPlayerDrawData {
+  final Offset? position;
+  final Color colour;
+  final String label;
+
+  ReplayPlayerDrawData({
+    required this.position,
+    required this.colour,
+    required this.label,
+  });
+}
+
+class ReplayPlayersPainter extends CustomPainter {
+  final List<ReplayPlayerDrawData> players;
+  final bool showLabel;
+
+  ReplayPlayersPainter({
+    required this.players,
+    required this.showLabel,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size){
+    for(final player in players){
+      if(player.position == null) continue;
+
+      final glowPaint = Paint()
+        ..color = player.colour.withValues(alpha: 0.25)
+        ..style = PaintingStyle.fill;
+
+      final fillPaint = Paint()
+        ..color = player.colour
+        ..style = PaintingStyle.fill;
+
+      final strokePaint = Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+
+      canvas.drawCircle(player.position!, 16, glowPaint);
+      canvas.drawCircle(player.position!, 10, fillPaint);
+      canvas.drawCircle(player.position!, 10, strokePaint);
+
+      if(!showLabel) continue;
+
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: player.label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+          player.position!.dx + 12,
+          player.position!.dy - 10,
+          textPainter.width + 12,
+          textPainter.height + 6,
+        ),
+        const Radius.circular(8),
+      );
+
+      final bgPaint = Paint()
+        ..color = const Color.fromARGB(160, 0, 0, 0)
+        ..style = PaintingStyle.fill;
+
+      canvas.drawRRect(rect, bgPaint);
+
+      textPainter.paint(
+        canvas,
+        ui.Offset(player.position!.dx + 18, player.position!.dy - 7),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant ReplayPlayersPainter oldDelegate){
+    if(oldDelegate.showLabel != showLabel) return true;
+    if(oldDelegate.players.length != players.length) return true;
+
+    for(int i = 0; i < players.length; i++){
+      final a = oldDelegate.players[i];
+      final b = players[i];
+
+      if(a.position != b.position ||
+          a.colour != b.colour ||
+          a.label != b.label){
+        return true;
+      }
+    }
+
+    return false;
+  }
+}
+
+class ClosedZoneReplayPainter extends CustomPainter {
+  final List<Face> faces;
+
+  ClosedZoneReplayPainter({
+    required this.faces,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size){
+    final fillPaint = Paint()
+      ..color = const Color.fromARGB(120, 255, 0, 0)
+      ..style = PaintingStyle.fill;
+
+    final strokePaint = Paint()
+      ..color = const Color.fromARGB(220, 255, 255, 255)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    for(final face in faces){
+      if(face.polygon.length < 3) continue;
+
+      final path = Path()..moveTo(face.polygon.first.dx, face.polygon.first.dy);
+
+      for(int i = 1; i < face.polygon.length; i++){
+        path.lineTo(face.polygon[i].dx, face.polygon[i].dy);
+      }
+
+      path.close();
+
+      canvas.drawPath(path, fillPaint);
+      canvas.drawPath(path, strokePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant ClosedZoneReplayPainter oldDelegate){
+    if(oldDelegate.faces.length != faces.length) return true;
+
+    for(int i = 0; i < faces.length; i++){
+      final a = oldDelegate.faces[i];
+      final b = faces[i];
+
+      if(a.faceID != b.faceID) return true;
+    }
+
+    return false;
+  }
 }

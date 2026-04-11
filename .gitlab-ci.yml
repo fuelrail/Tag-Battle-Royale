@@ -1,0 +1,22 @@
+stages:
+  - test
+  - build
+
+image: ghcr.io/cirruslabs/flutter:stable
+
+before_script:
+  - cd src/tag_battle_royale
+  - flutter pub get
+
+test:
+  stage: test
+  script:
+    - flutter test
+
+build:
+  stage: build
+  script:
+    - flutter build apk --debug
+  artifacts:
+    paths:
+      - src/tag_battle_royale/build/app/outputs/flutter-apk/app-debug.apk

@@ -1358,7 +1358,7 @@ Widget _buildLobbyTopSection(BuildContext context) {
       return Stack(
         children: [
           MapViewer(map: _receivedMap!, showAppBar: false),
-          if (amRunner && !_gameFinished)
+          if (amRunner)
             Positioned(
               left: 24,
               right: 24,

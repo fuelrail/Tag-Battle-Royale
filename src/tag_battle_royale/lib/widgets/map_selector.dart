@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../util/map_file_handler.dart';
-import 'map_viewer.dart';
+import 'zone_selector.dart';
 import 'google_maps_viewer.dart';
 
 /// Map browser that lets the host view and select a map for the game.
@@ -42,19 +42,18 @@ class _MapSelectorState extends State<MapSelector> {
 
   /// Open the map viewer with a "Select Map" button.
   Future<void> _viewAndSelect(MapFile map) async {
-      final result = await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => MapViewer(
-            map: map,
-            showSelectButton: true,
-          ),
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ZoneSelector(
+          map: map,
         ),
-      );
-      if (result != null && result['selected'] == true) {
-        widget.onMapSelected(map, result['faces']);
-      }
+      ),
+    );
+    if (result != null && result['selected'] == true) {
+      widget.onMapSelected(map, result['faces']);
     }
+  }
 
   /// Navigate to map creation. Auto-select the new map.
   Future<void> _createNewMap() async {
