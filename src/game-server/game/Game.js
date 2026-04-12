@@ -3,6 +3,7 @@ class Game {
     this.id = id;
     this.hostId = null;
     this.players = new Map(); // { playerId: Player }
+    this.pendingPlayers = new Map(); // { socketId: { socketId, playerName } }
     this.status = "waiting"; // waiting or starting or active or finished
     this.createdAt = Date.now();
     this.startedAt = null;
@@ -83,6 +84,29 @@ class Game {
     return Array.from(this.players.values()).map((p) => p.toJSON());
   }
 
+    // --- Pending players ---
+
+  addPendingPlayer(socketId, playerName) {
+    this.pendingPlayers.set(socketId, { socketId, playerName });
+  }
+
+  removePendingPlayer(socketId) {
+    this.pendingPlayers.delete(socketId);
+  }
+
+  getPendingPlayer(socketId) {
+    return this.pendingPlayers.get(socketId);
+  }
+
+  getPendingPlayerList() {
+    return Array.from(this.pendingPlayers.values());
+  }
+
+  rejectAllPending() {
+    const pending = this.getPendingPlayerList();
+    this.pendingPlayers.clear();
+    return pending;
+  }
 
   // --- Catch tracking ---
 

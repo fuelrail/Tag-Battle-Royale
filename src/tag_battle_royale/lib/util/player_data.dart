@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
 
+class PendingPlayer {
+  final String socketId;
+  final String playerName;
+
+  PendingPlayer({required this.socketId, required this.playerName});
+}
+
 const List<Color> playerColours = [
   Colors.red,
   Colors.blue,

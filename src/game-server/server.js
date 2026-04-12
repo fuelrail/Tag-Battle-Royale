@@ -54,6 +54,33 @@ io.on("connection", (socket) => {
   // --- Disconnect ---
   //
   socket.on("disconnect", (reason) => {
+    // Check if this was a pending player
+    const pendingGameId = gameManager.getPendingGameId(socket.id);
+    if (pendingGameId) {
+      const game = gameManager.getGame(pendingGameId);
+      if (game) {
+        const pending = game.getPendingPlayer(socket.id);
+        const pendingName = pending?.playerName ?? "Unknown";
+        game.removePendingPlayer(socket.id);
+        console.log(`[disconnect] Pending player "${pendingName}" (${socket.id}) disconnected from game ${pendingGameId}`);
+
+        // Notify host that a pending player left
+        const host = game.getPlayer(game.hostId);
+        if (host && host.connected && host.socketId) {
+          const hostSocket = io.sockets.sockets.get(host.socketId);
+          if (hostSocket) {
+            hostSocket.emit("player:pending:left", {
+              socketId: socket.id,
+              playerName: pendingName,
+              pendingPlayers: game.getPendingPlayerList(),
+            });
+          }
+        }
+      }
+      gameManager.removePendingPlayer(socket.id);
+    }
+
+    // Check if this was a game player
     const player = gameManager.getPlayerBySocketId(socket.id);
     if (player) {
       const gameId = player.gameId;
@@ -65,11 +92,21 @@ io.on("connection", (socket) => {
         gameManager.socketToPlayer.delete(socket.id);
         console.log(`[disconnect] Client: (${socket.id}) Reason: (${reason}) PlayerName: (${player.name}) PlayerId: (${player.id}) "fully removed from lobby game" (${gameId})`);
 
+        // Host leaving during lobby disbands the game
         if (player.id === game.hostId) {
-          // Host left during lobby, disband
+          // Reject all pending players
+          const pendingList = game.rejectAllPending();
+          for (const p of pendingList) {
+            gameManager.removePendingPlayer(p.socketId);
+            const pSocket = io.sockets.sockets.get(p.socketId);
+            if (pSocket) {
+              pSocket.emit("player:rejected", { reason: "Game disbanded by host" });
+            }
+          }
+
           io.to(gameId).emit("game:disbanded", { reason: "Host left the game" });
           gameManager.removeGame(gameId);
-          console.log(`[disconnect] Game ${gameId} disbanded (host left)`);
+          console.log(`[disconnect] Game ${gameId} disbanded (host disconnected)`);
         } else {
           io.to(gameId).emit("player:left", {
             playerId: player.id,
@@ -102,7 +139,7 @@ io.on("connection", (socket) => {
         gameManager.scheduleCleanupIfEmpty(gameId);
       }
 
-    } else {
+    } else if (!pendingGameId) {
       console.log(`[disconnect] Client (${socket.id}) was not in any game`);
     }
 
