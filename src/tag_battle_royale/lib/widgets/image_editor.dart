@@ -3,7 +3,10 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:ui' as ui;
 
 import '../util/stroke.dart';
-import '../util/mapPainter/map_painter.dart';
+import '../util/mapPainter/image_painter.dart';
+import '../util/mapPainter/edge_painter.dart';
+import '../util/mapPainter/face_painter.dart';
+import '../util/mapPainter/stroke_painter.dart';
 import '../util/faceDetection/face_detector.dart';
 import '../util/faceDetection/face_detection_graph.dart';
 import '../util/faceDetection/face_detection_point.dart';
@@ -41,7 +44,7 @@ class ImageEditorState extends State<ImageEditor> {
   EditorTool? currentTool;
   bool _toolboxOpen = false;
 
-  FaceDetector faceDetector = FaceDetector();
+  final FaceDetector _faceDetector = FaceDetector();
 
   ui.Offset? _lineStart;
   Stroke? _previewStroke;
@@ -49,6 +52,8 @@ class ImageEditorState extends State<ImageEditor> {
   int _nextStrokeIndex = 0;
 
   static const double _eraserThreshold = 20.0;
+
+  final ValueNotifier<int> _canvasTick = ValueNotifier(0);
 
   bool get drawToggle => currentTool != null;
 
@@ -59,11 +64,11 @@ class ImageEditorState extends State<ImageEditor> {
   }
 
   void _rebuildGraph(){
-    faceDetector = FaceDetector();
-    for(final stroke in strokes){
-      faceDetector.addStroke(stroke);
-    }
-    faceDetector.buildGraphAndFindFaces();
+    _faceDetector.replaceAllStrokes(strokes);
+  }
+
+  void _repaintCanvas(){
+    _canvasTick.value++;
   }
   // adds a removed stroke back to strokes
   void _redo(){
@@ -108,6 +113,7 @@ class ImageEditorState extends State<ImageEditor> {
       _previewStroke = null;
       _lineStart = null;
     });
+    _repaintCanvas();
   }
   // moves to the naming phase
   void _finishDrawMode(){
@@ -118,6 +124,7 @@ class ImageEditorState extends State<ImageEditor> {
       _previewStroke = null;
       _lineStart = null;
     });
+    _repaintCanvas();
   }
   // bad to the draw mode
   void _backToDrawMode(){
@@ -185,7 +192,7 @@ class ImageEditorState extends State<ImageEditor> {
             TextButton(
               onPressed: (){
                 setState((){
-                  faceDetector.deleteFace(face);
+                  _faceDetector.deleteFace(face);
                 });
                 Navigator.pop(context);
               },
@@ -247,7 +254,7 @@ class ImageEditorState extends State<ImageEditor> {
   // save the map as a json file
   Future<void> _saveMap() async {
     try {
-      final graph = faceDetector.graph;
+      final graph = _faceDetector.graph;
       if(graph == null) return;
 
       final mapFile = await MapFile.create(
@@ -284,7 +291,7 @@ class ImageEditorState extends State<ImageEditor> {
       return;
     }
 
-    final graph = faceDetector.graph;
+    final graph = _faceDetector.graph;
     if(graph == null) return;
 
     final face = graph.pointInFace(scenePoint);
@@ -298,34 +305,33 @@ class ImageEditorState extends State<ImageEditor> {
     if(details.pointerCount != 1) return;
     if(!_inBounds(scenePoint)) return;
 
-    setState((){
-      switch (currentTool){
-        case EditorTool.pen:
-          strokes.add(
-            Stroke(
-              points: [scenePoint],
-              index: _nextStrokeIndex++,
-            ),
-          );
-          redoStrokes.clear();
-          break;
-
-        case EditorTool.line:
-          _lineStart = scenePoint;
-          _previewStroke = Stroke(
-            points: [scenePoint, scenePoint],
+    switch (currentTool){
+      case EditorTool.pen:
+        strokes.add(
+          Stroke(
+            points: [scenePoint],
             index: _nextStrokeIndex++,
-          );
-          break;
+          ),
+        );
+        redoStrokes.clear();
+        break;
 
-        case EditorTool.eraser:
-          _eraseAtPoint(scenePoint);
-          break;
+      case EditorTool.line:
+        _lineStart = scenePoint;
+        _previewStroke = Stroke(
+          points: [scenePoint, scenePoint],
+          index: _nextStrokeIndex++,
+        );
+        break;
 
-        case null:
-          break;
-      }
-    });
+      case EditorTool.eraser:
+        _eraseAtPoint(scenePoint);
+        break;
+
+      case null:
+        break;
+    }
+    _repaintCanvas();
   }
   // handle scale update
   void _handleScaleUpdate(ScaleUpdateDetails details, ui.Offset scenePoint){
@@ -333,28 +339,28 @@ class ImageEditorState extends State<ImageEditor> {
     if(details.pointerCount != 1) return;
     if(!_inBounds(scenePoint)) return;
 
-    setState((){
-      switch (currentTool){
-        case EditorTool.pen:
-          if(strokes.isNotEmpty){
-            strokes.last.add(scenePoint);
-          }
-          break;
+    
+    switch (currentTool){
+      case EditorTool.pen:
+        if(strokes.isNotEmpty){
+          strokes.last.add(scenePoint);
+        }
+        break;
 
-        case EditorTool.line:
-          if(_previewStroke != null && _lineStart != null){
-            _previewStroke!.points[1] = scenePoint;
-          }
-          break;
+      case EditorTool.line:
+        if(_previewStroke != null && _lineStart != null){
+          _previewStroke!.points[1] = scenePoint;
+        }
+        break;
 
-        case EditorTool.eraser:
-          _eraseAtPoint(scenePoint);
-          break;
+      case EditorTool.eraser:
+        _eraseAtPoint(scenePoint);
+        break;
 
-        case null:
-          break;
-      }
-    });
+      case null:
+        break;
+    }
+    _repaintCanvas();
   }
   // handle scale end
   void _handleScaleEnd(ScaleEndDetails details){
@@ -363,21 +369,19 @@ class ImageEditorState extends State<ImageEditor> {
     switch (currentTool){
       case EditorTool.pen:
         if(strokes.isNotEmpty){
-          setState((){
-            _rebuildGraph();
-          });
+          _rebuildGraph();
+          setState(() {});
         }
         break;
 
       case EditorTool.line:
         if(_previewStroke != null){
-          setState((){
-            strokes.add(_previewStroke!);
-            redoStrokes.clear();
-            _previewStroke = null;
-            _lineStart = null;
-            _rebuildGraph();
-          });
+          strokes.add(_previewStroke!);
+          redoStrokes.clear();
+          _previewStroke = null;
+          _lineStart = null;
+          _rebuildGraph();
+          setState(() {});
         }
         break;
 
@@ -387,6 +391,7 @@ class ImageEditorState extends State<ImageEditor> {
       case null:
         break;
     }
+    _repaintCanvas();
   }
   // returns the icon for a given tool
   IconData _toolIcon(EditorTool tool){
@@ -419,8 +424,8 @@ class ImageEditorState extends State<ImageEditor> {
       onPressed: () => _setTool(tool),
       tooltip: _toolLabel(tool),
       style: IconButton.styleFrom(
-        backgroundColor: selected ? Theme.of(context).colorScheme.primary : null,
-        foregroundColor: Colors.white,
+        backgroundColor: selected ? Theme.of(context).colorScheme.secondary : null,
+        foregroundColor: Theme.of(context).colorScheme.primary,
       ),
       icon: Icon(_toolIcon(tool)),
       selectedIcon: Icon(_toolIcon(tool)),
@@ -440,16 +445,16 @@ class ImageEditorState extends State<ImageEditor> {
           onTap: _editMapName,
           child: Text(mapName),
         ),
-        titleTextStyle: const TextStyle(
-          color: Colors.white,
-          fontSize: 20,
+        titleTextStyle: Theme.of(context).textTheme.titleLarge,
+        iconTheme: IconThemeData(
+          color: Theme.of(context).colorScheme.primary,
         ),
-        iconTheme: const IconThemeData(
-          color: Colors.white,
-        ),
-        backgroundColor: const Color.fromARGB(60, 0, 0, 0),
+        backgroundColor: Theme.of(context).colorScheme.onPrimary,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(
+            Icons.arrow_back,
+            color: Theme.of(context).colorScheme.primary,
+          ),
           onPressed: (){
             if(drawMode && _toolboxOpen){
               setState((){
@@ -479,14 +484,17 @@ class ImageEditorState extends State<ImageEditor> {
             IconButton(
               icon: const Icon(Icons.undo),
               onPressed: _undo,
+              color: Theme.of(context).colorScheme.primary,
             ),
             IconButton(
               icon: const Icon(Icons.redo),
               onPressed: _redo,
+              color: Theme.of(context).colorScheme.primary,
             ),
             IconButton(
               icon: const Icon(Icons.close),
               onPressed: _toggleToolbox,
+              color: Theme.of(context).colorScheme.primary,
             ),
           ],
         ] :
@@ -523,16 +531,48 @@ class ImageEditorState extends State<ImageEditor> {
         onScaleEnd: _handleScaleEnd,
         child: Stack(
           children: [
-            CustomPaint(
-              size: imageSize,
-              painter: MapPainter(
-                image: widget.image,
-                graph: faceDetector.graph,
-                strokes: displayStrokes,
-                drawMode: drawMode,
-                drawLabel: !drawMode,
+            RepaintBoundary(
+              child: CustomPaint(
+                size: imageSize,
+                painter: ImagePainter(widget.image),
               ),
             ),
+
+            RepaintBoundary(
+              child: CustomPaint(
+                size: imageSize,
+                painter: FacePainter(
+                  faces: _faceDetector.graph?.faces ?? [],
+                  drawLabel: !drawMode,
+                ),
+              ),
+            ),
+
+            if (!drawMode)
+              RepaintBoundary(
+                child: CustomPaint(
+                  size: imageSize,
+                  painter: EdgePainter(
+                    edges: _faceDetector.graph?.edges ?? [],
+                  ),
+                ),
+              ),
+
+            if (drawMode)
+              RepaintBoundary(
+                child: ValueListenableBuilder<int>(
+                  valueListenable: _canvasTick,
+                  builder: (_, __, ___) {
+                    return CustomPaint(
+                      size: imageSize,
+                      painter: StrokePainter([
+                        ...strokes,
+                       ?_previewStroke,
+                      ]),
+                    );
+                  },
+                ),
+              ),
           ],
         ),
       ),
@@ -546,10 +586,10 @@ class ImageEditorState extends State<ImageEditor> {
 //   super.initState();
 //   int i = 0;
 //   while(i < strokes.length){
-//     faceDetector.addStroke(strokes[i]);
+//     _faceDetector.addStroke(strokes[i]);
 //     i++;
 //   }
-//   faceDetector.buildGraphAndFindFaces();
+//   _faceDetector.buildGraphAndFindFaces();
 // }
 
 // use for testing -> prints current strokes to terminal in a format that can be used in code
@@ -573,7 +613,7 @@ class ImageEditorState extends State<ImageEditor> {
 //     widget.image.height.toDouble(),
 //   ),
 //   painter: EdgePainter(
-//     edges: faceDetector.graph?.edges ?? [],
+//     edges: _faceDetector.graph?.edges ?? [],
 //   ),
 // ),
 // CustomPaint(
@@ -582,6 +622,6 @@ class ImageEditorState extends State<ImageEditor> {
 //     widget.image.height.toDouble(),
 //   ),
 //   painter: VertexPainter(
-//     vertice: faceDetector.graph?.vertices ?? [],
+//     vertice: _faceDetector.graph?.vertices ?? [],
 //   ),
 // ),

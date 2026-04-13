@@ -43,6 +43,16 @@ Future<List<MapFile>> getMaps() async {
   return maps;
 }
 
+Future<MapFile?> getMapByID(String id) async {
+  final maps = await getMaps();
+  for(final map in maps){
+    if(map.id == id){
+      return map;
+    }
+  }
+  return null;
+}
+
 Future<Directory> getMapsDirectory() async {
   final rootDir = await getApplicationDocumentsDirectory();
   final mapsDir = Directory('${rootDir.path}/maps');

@@ -24,17 +24,15 @@ class Players extends ChangeNotifier {
 
   void addPlayer(Player player){
     _playersById[player.id] = player;
-    notifyListeners();
   }
 
-  void updatePlayerPosition(String id, ui.Offset position){
+  void updatePlayerPosition(String id, ui.Offset? position){
     final player = _playersById[id];
     if(player == null) return;
 
     if(player.position == position) return;
 
     player.position = position;
-    notifyListeners();
   }
 
   void updatePlayerPositions(Map<String, ui.Offset> updates){
@@ -53,6 +51,10 @@ class Players extends ChangeNotifier {
     if(changed){
       notifyListeners();
     }
+  }
+
+  void update(){
+    notifyListeners();
   }
 
   Player? getPlayer(String id){

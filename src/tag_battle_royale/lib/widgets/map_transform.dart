@@ -6,7 +6,7 @@ class MapTransform extends StatefulWidget {
     super.key,
     required this.image,
     required this.child,
-    this.minScale = 0.9,
+    this.minScale = 1.0,
     this.maxScale = 4.0,
     this.onTapScene,
     this.onScaleStartScene,
@@ -113,8 +113,7 @@ class _MapTransformState extends State<MapTransform> {
                 widget.onScaleUpdateScene!(details, currentScenePoint);
               }
 
-              final shouldTransformNow =
-                  widget.shouldTransformOnScaleUpdate?.call(details) ??
+              final shouldTransformNow = widget.shouldTransformOnScaleUpdate?.call(details) ??
                   _transformThisGesture;
 
               if(!shouldTransformNow) return;

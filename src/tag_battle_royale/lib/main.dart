@@ -23,7 +23,55 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Game Lobby',
-      theme: ThemeData(colorSchemeSeed: Colors.deepPurple, useMaterial3: true),
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: const ColorScheme(
+          brightness: Brightness.light,
+          primary: Color.fromARGB(255, 235, 127, 26),
+          onPrimary: Color.fromARGB(255, 255, 255, 255),
+          secondary: Color.fromARGB(255, 255, 219, 172),
+          onSecondary: Color.fromARGB(255, 255, 167, 35),
+          error: Color.fromARGB(255, 248, 94, 33),
+          onError: Colors.white,
+          surface: Colors.white,
+          onSurface: Colors.black,
+          outline: Color.fromARGB(255, 235, 127, 26),
+        ),
+        textTheme: const TextTheme(
+          titleLarge: TextStyle(
+            color: Color.fromARGB(255, 235, 127, 26),
+            fontWeight: FontWeight.w500,
+          ),
+          headlineMedium: TextStyle(
+            fontSize: 42,
+            fontWeight: FontWeight.w700,
+            color: Color.fromARGB(255, 235, 127, 26),
+            letterSpacing: 0.2,
+          ),
+          headlineSmall: TextStyle(
+            fontSize: 34,
+            fontWeight: FontWeight.w700,
+            color: Color.fromARGB(255, 235, 127, 26),
+            letterSpacing: 0.2,
+          ),
+          bodyMedium: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w400,
+            color: Color.fromARGB(255, 235, 127, 26),
+            letterSpacing: 0.1,
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          enabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: Color.fromARGB(255, 235, 127, 26)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            
+            borderSide: BorderSide(color: Color.fromARGB(255, 235, 127, 26), width: 2),
+          ),
+        ),
+      ),
+      
       home: const ModeSelectionScreen(),
     );
   }
@@ -117,16 +165,31 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
+      body:  Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color.fromARGB(255, 250, 168, 45),
+            Color.fromARGB(255, 250, 144, 45),
+            
+          ],
+        ),
+      ),
+      child: Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Text('Tag Battle Royale',
-                style: Theme.of(context).textTheme.headlineMedium),
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  color: Colors.white,
+                ),
+              ),
             const SizedBox(height: 8),
             Text('Choose your connection mode',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                    color: Colors.white)),
             const SizedBox(height: 48),
 
             // Reconnect error message
@@ -155,8 +218,8 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
                   icon: const Icon(Icons.refresh),
                   label: Text('Reconnect to ${_savedSession!.gameId}'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
                   ),
                   onPressed: () => _reconnect(context),
                 ),
@@ -179,7 +242,11 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
             SizedBox(
               width: double.infinity,
               height: 56,
-              child: FilledButton.icon(
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.onPrimary,
+                  foregroundColor: Theme.of(context).colorScheme.primary,
+                ),
                 icon: const Icon(Icons.cloud),
                 label: const Text('Online'),
                 onPressed: () => _go(context, GameMode.online),
@@ -189,8 +256,12 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
             SizedBox(
               width: double.infinity,
               height: 56,
-              child: FilledButton.tonalIcon(
-                icon: const Icon(Icons.cloud_off),
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.onPrimary,
+                  foregroundColor: Theme.of(context).colorScheme.primary,
+                ),
+                icon: const Icon(Icons.bluetooth),
                 label: const Text('Offline'),
                 onPressed: () => _go(context, GameMode.offline),
               ),
@@ -199,7 +270,11 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
             SizedBox(
               width: double.infinity,
               height: 56,
-              child: OutlinedButton.icon(
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                ),
                 icon: const Icon(Icons.map),
                 label: const Text('Map Editor'),
                 onPressed: () {
@@ -214,8 +289,12 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
             SizedBox(
               width: double.infinity,
               height: 56,
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.map),
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                ),
+                icon: const Icon(Icons.location_history),
                 label: const Text('Game Replays'),
                 onPressed: () {
                   Navigator.push(
@@ -228,6 +307,7 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
           ]),
         ),
       ),
+      )
     );
   }
 }
@@ -346,7 +426,13 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     final modeLabel = isOnline ? 'Online' : 'Offline';
 
     return Scaffold(
-      appBar: AppBar(title: Text('$modeLabel - Host or Join')),
+      appBar: AppBar(
+        title: Text('$modeLabel - Host or Join',
+          style: Theme.of(context).textTheme.titleLarge),
+        iconTheme: IconThemeData(
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
@@ -363,18 +449,21 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
 
             TextField(
               controller: _nameCtrl,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
+                labelStyle: Theme.of(context).textTheme.bodyMedium,
                   labelText: 'User Name',
-                  border: OutlineInputBorder()),
+                  ),
             ),
 
             if (isOnline) ...[
               const SizedBox(height: 12),
               TextField(
                 controller: _codeCtrl,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
+                    labelStyle: Theme.of(context).textTheme.bodyMedium,
                     labelText: 'Game Code (join only)',
-                    border: OutlineInputBorder()),
+                    counterText: ""
+                    ),
                 textCapitalization: TextCapitalization.characters,
                 maxLength: 6,
               ),

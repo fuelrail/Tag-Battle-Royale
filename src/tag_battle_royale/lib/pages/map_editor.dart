@@ -29,13 +29,21 @@ class _MapEditorState extends State<MapEditor> {
   Widget build(BuildContext context){
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Map Editor"),
+        title: Text("Map Editor",
+        style: Theme.of(context).textTheme.titleLarge),
+        iconTheme: IconThemeData(
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
       body: Column(
         children: [
           ListTile(
-            leading: const Icon(Icons.add),
-            title: const Text("Add New Map"),
+            leading: Icon(
+              Icons.add,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            title: Text("Add New Map",
+            style: Theme.of(context).textTheme.bodyMedium),
             onTap: () async {
               final shouldReload = await Navigator.push(
                 context,
@@ -67,27 +75,30 @@ class _MapEditorState extends State<MapEditor> {
                   itemBuilder: (context, index){
                     final map = maps[index];
                     return ListTile(
-                      leading: const Icon(Icons.map),
+                      leading: Icon(Icons.map),
                       title: Text(map.mapName),
                       onTap: () async {
                         if(!context.mounted) return;
                         Navigator.push(
                           context,
-                          MaterialPageRoute(
-                            builder: (_) =>ExampleGame(
-                              map: map,
-                            ),
-                          ),
-                        );
                         //   MaterialPageRoute(
-                        //     builder: (_) => MapViewer(
+                        //     builder: (_) =>ExampleGame(
                         //       map: map,
                         //     ),
                         //   ),
                         // );
+                          MaterialPageRoute(
+                            builder: (_) => MapViewer(
+                              map: map,
+                            ),
+                          ),
+                        );
                       },
                       trailing: IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
+                        icon: Icon(
+                          Icons.delete,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
                         onPressed: () async {
                           final confirm = await showDialog<bool>(
                             context: context,

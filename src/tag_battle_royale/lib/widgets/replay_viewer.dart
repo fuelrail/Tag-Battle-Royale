@@ -8,16 +8,15 @@ import '../util/mapPainter/map_painter.dart';
 import '../util/faceDetection/face_detection_graph.dart';
 import '../widgets/map_transform.dart';
 import '../widgets/TabButton.dart';
+import '../util/map_file_handler.dart';
 
 class ReplayViewer extends StatefulWidget {
   const ReplayViewer({
     super.key,
     required this.replayFile,
-    required this.image,
   });
 
   final ReplayFile replayFile;
-  final ui.Image image;
 
   @override
   State<ReplayViewer> createState() => _ReplayViewerState();
@@ -37,6 +36,9 @@ class _ReplayViewerState extends State<ReplayViewer> {
   final double _playbackSpeed = 1.0;
 
   late Set<String> _selectedPlayerIds;
+  MapFile? _map;
+  late ui.Image _image;
+  bool _mapExists = true;
 
   double get _maxTime {
     double maxTime = 0.0;
@@ -61,6 +63,18 @@ class _ReplayViewerState extends State<ReplayViewer> {
   void initState(){
     super.initState();
     _selectedPlayerIds = widget.replayFile.replays.map((r) => r.playerID).toSet();
+    _loadReplayData();
+  }
+
+  Future<void> _loadReplayData() async {
+    _map = await getMapByID(widget.replayFile.mapId);
+    if(_map == null){
+      _mapExists = false;  
+      return;
+    }
+    _image = await _map!.getImage();
+    if(!mounted){return;}
+    setState(() {});
   }
 
   @override
@@ -169,7 +183,7 @@ class _ReplayViewerState extends State<ReplayViewer> {
 
   List<Face> _getClosedFacesAtTime(double time){
     final closedIds = widget.replayFile.getClosedZoneIdsAtTime(time).toSet();
-    return widget.replayFile.map.graph.faces.where((face){
+    return _map!.graph.faces.where((face){
       return closedIds.contains(face.faceID);
     }).toList();
   }
@@ -183,9 +197,25 @@ class _ReplayViewerState extends State<ReplayViewer> {
 
   @override
   Widget build(BuildContext context){
+    if(_map == null && _mapExists){
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if(_map == null){
+      return const Scaffold(
+        body: Center(
+          child: Text("Error: No map found"),
+        ),
+      );
+    }
+
     final imageSize = Size(
-      widget.image.width.toDouble(),
-      widget.image.height.toDouble(),
+      _image.width.toDouble(),
+      _image.height.toDouble(),
     );
     final selectedReplays = widget.replayFile.replays.where(
       (replay) => _selectedPlayerIds.contains(replay.playerID),
@@ -194,29 +224,25 @@ class _ReplayViewerState extends State<ReplayViewer> {
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(widget.replayFile.replayName),
-        titleTextStyle: const TextStyle(
-          color: Colors.white,
-          fontSize: 20,
-          fontWeight: FontWeight.w600,
+        titleTextStyle: Theme.of(context).textTheme.titleLarge,
+        iconTheme: IconThemeData(
+          color: Theme.of(context).colorScheme.primary,
         ),
-        iconTheme: const IconThemeData(
-          color: Colors.white,
-        ),
-        backgroundColor: const Color.fromARGB(80, 0, 0, 0),
+        backgroundColor: Theme.of(context).colorScheme.onPrimary,
         elevation: 0,
       ),
       body: Stack(
         children: [
           MapTransform(
-            image: widget.image,
+            image: _image,
             child: Stack(
               children: [
                 RepaintBoundary(
                   child: CustomPaint(
                     size: imageSize,
                     painter: MapPainter(
-                      image: widget.image,
-                      map: widget.replayFile.map,
+                      image: _image,
+                      map: _map!,
                       drawMode: false,
                       drawLabel: true,
                     ),
@@ -300,6 +326,9 @@ class _ReplayViewerState extends State<ReplayViewer> {
                       clipBehavior: Clip.none,
                       children: [
                         Container(
+                          constraints: const BoxConstraints(
+                            minHeight: 140,
+                          ),
                           margin: const EdgeInsets.only(top: 20),
                           padding: EdgeInsets.fromLTRB(
                             12,
@@ -323,16 +352,16 @@ class _ReplayViewerState extends State<ReplayViewer> {
                                       children: [
                                         IconButton(
                                           onPressed: _reset,
-                                          icon: const Icon(
+                                          icon: Icon(
                                             Icons.replay,
-                                            color: Colors.black,
+                                            color: Theme.of(context).colorScheme.primary,
                                           ),
                                         ),
                                         IconButton(
                                           onPressed: _togglePlayPause,
                                           icon: Icon(
                                             _isPlaying ? Icons.pause : Icons.play_arrow,
-                                            color: Colors.black,
+                                            color: Theme.of(context).colorScheme.primary,
                                           ),
                                         ),
                                         Expanded(
@@ -342,6 +371,7 @@ class _ReplayViewerState extends State<ReplayViewer> {
                                               return SliderTheme(
                                                 data: SliderTheme.of(context).copyWith(
                                                   trackHeight: 4,
+                                                  inactiveTrackColor: ui.Color.fromARGB(40, 0, 0, 0,),
                                                   thumbShape:
                                                       const RoundSliderThumbShape(
                                                     enabledThumbRadius: 7,
@@ -399,6 +429,7 @@ class _ReplayViewerState extends State<ReplayViewer> {
                                       padding: const EdgeInsets.symmetric(vertical: 4),
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(
+                                          
                                           horizontal: 10,
                                           vertical: 8,
                                         ),
@@ -446,11 +477,13 @@ class _ReplayViewerState extends State<ReplayViewer> {
                                     );
                                   }).toList(),
                                 ),
-                              if(_activeTab == BottomTab.settings)
-                                Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
+                              if (_activeTab == BottomTab.settings)
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                    child: Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 10,
                                         vertical: 8,
@@ -472,17 +505,16 @@ class _ReplayViewerState extends State<ReplayViewer> {
                                           ),
                                           Checkbox(
                                             value: showLabel,
-                                            onChanged: (value){
-                                              setState(
-                                                () => showLabel = value ?? true,
-                                              );
+                                            onChanged: (value) {
+                                              setState(() => showLabel = value ?? true);
                                             },
                                           ),
                                         ],
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
+                              ),
                             ],
                           ),
                         ),
