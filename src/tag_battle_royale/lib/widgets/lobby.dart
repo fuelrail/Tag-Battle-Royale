@@ -23,7 +23,7 @@ class LobbyLayout extends StatefulWidget {
     required this.onChannelChanged,
   });
 
-  final String title;
+  final Widget title;
   final bool isConnected;
   final List<PlayerData> players;
   final Map<String, List<ChatMessage>> chatMessages; // { channel: messages }
@@ -304,7 +304,7 @@ class LobbyLayoutState extends State<LobbyLayout> {
     extendBody: isFullscreenMap,
     resizeToAvoidBottomInset: true,
     appBar: AppBar(
-      title: Text(widget.title),
+      title: widget.title,
       actions: [
         Padding(
           padding: const EdgeInsets.only(right: 16),

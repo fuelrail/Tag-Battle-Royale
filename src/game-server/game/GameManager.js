@@ -6,9 +6,11 @@ class GameManager {
   constructor() {
     this.games = new Map(); // { gameId: Game }
     this.socketToPlayer = new Map(); // { socketId: { playerId, gameId } }
+    this.socketToPending = new Map(); // { socketId: gameId }
   }
 
-  // Games
+  // --- Games ---
+
   createGame(config = {}) {
     const gameId = this.generateGameCode();
     const game = new Game(gameId, config);
@@ -53,6 +55,8 @@ class GameManager {
     console.log(`[GameManager] ${playerName} (${playerId}) joined game ${gameId}`);
     return player;
   }
+
+  // --- Connections ---
 
   // Disconnection, mark player as disconnected
   disconnectPlayer(socketId) {
@@ -118,9 +122,22 @@ class GameManager {
     return game.getPlayer(mapping.playerId);
   }
 
+  // --- Pending players ---
 
-  // Helpers
-  // Generate a game code
+  addPendingPlayer(socketId, gameId) {
+    this.socketToPending.set(socketId, gameId);
+  }
+
+  removePendingPlayer(socketId) {
+    this.socketToPending.delete(socketId);
+  }
+
+  getPendingGameId(socketId) {
+    return this.socketToPending.get(socketId) || null;
+  }
+
+  // --- Helpers ---
+  
   generateGameCode() {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; 
     let code;

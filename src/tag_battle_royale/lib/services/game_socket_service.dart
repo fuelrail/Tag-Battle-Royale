@@ -111,6 +111,12 @@ class GameSocketService {
   JsonCallback? onMapData;                        // { map, faceOrder, closureIntervalMs, gracePeriodMs }
   JsonCallback? onPlayerRoleUpdated;              // { playerId, role }
   JsonCallback? onGameDisbanded;                  // { reason }
+  JsonCallback? onReplayReceived;                 // { playerId, replay }
+  JsonCallback? onPlayerPending;                  // { socketId, playerName, pendingPlayers }
+  JsonCallback? onPlayerPendingLeft;              // { socketId, playerName, pendingPlayers }
+  JsonCallback? onPlayerAccepted;                 // { game, playerId }
+  JsonCallback? onPlayerRejected;                 // { reason }
+  JsonCallback? onPlayerKicked;                   // { reason }
   LocationBroadcastCallback? onLocationBroadcast; // { playerId: PlayerLocationInfo }
   ChatMessageCallback? onChatMessage;             // ChatMessage { playerId, playerName, text, timestamp, channel }
   ChatHistoryCallback? onChatHistory;             // (channel, List<ChatMessage>)
@@ -183,18 +189,39 @@ class GameSocketService {
     });
 
     _socket.on('game:map', (data) {
-      final d = Map<String, dynamic>.from(data);
-      onMapData?.call(d);
+      onMapData?.call(Map<String, dynamic>.from(data));
     });
 
     _socket.on('player:role:updated', (data) {
-      final d = Map<String, dynamic>.from(data);
-      onPlayerRoleUpdated?.call(d);
+      onPlayerRoleUpdated?.call(Map<String, dynamic>.from(data));
     });
 
     _socket.on('game:disbanded', (data) {
-      final d = Map<String, dynamic>.from(data);
-      onGameDisbanded?.call(d);
+      onGameDisbanded?.call(Map<String, dynamic>.from(data));
+    });
+
+    _socket.on('replay:received', (data) {
+      onReplayReceived?.call(Map<String, dynamic>.from(data));
+    });
+
+    _socket.on('player:pending', (data) {
+      onPlayerPending?.call(Map<String, dynamic>.from(data));
+    });
+
+    _socket.on('player:pending:left', (data) {
+      onPlayerPendingLeft?.call(Map<String, dynamic>.from(data));
+    });
+
+    _socket.on('player:accepted', (data) {
+      onPlayerAccepted?.call(Map<String, dynamic>.from(data));
+    });
+
+    _socket.on('player:rejected', (data) {
+      onPlayerRejected?.call(Map<String, dynamic>.from(data));
+    });
+
+    _socket.on('player:kicked', (data) {
+      onPlayerKicked?.call(Map<String, dynamic>.from(data));
     });
 
     _socket.on('location:broadcast', (data) {
@@ -207,8 +234,7 @@ class GameSocketService {
     });
 
     _socket.on('chat:message', (data) {
-      final d = Map<String, dynamic>.from(data);
-      onChatMessage?.call(ChatMessage.fromJson(d));
+      onChatMessage?.call(ChatMessage.fromJson(Map<String, dynamic>.from(data)));
     });
 
     _socket.on('chat:history', (data) {
@@ -224,29 +250,6 @@ class GameSocketService {
     _socket.on('error', (data) {
       final d = Map<String, dynamic>.from(data);
       onError?.call(d['event'] ?? 'unknown', d['message'] ?? 'Unknown error');
-    });
-  }
-
-  // Rejoin after a socket reconnection
-  void _attemptRejoin() {
-    print('[GameSocketService] Attempting rejoin: game=$currentGameId player=$currentPlayerId');
-
-    _socket.emitWithAck('game:rejoin', {
-      'gameId': currentGameId,
-      'playerId': currentPlayerId,
-      'hasMap': hasMap,
-    }, ack: (response) {
-      final d = Map<String, dynamic>.from(response);
-      if (d['ok'] == true) {
-        print('[GameSocketService] Rejoin successful');
-        onRejoined?.call(d);
-      } else {
-        // Rejoin failed, game or player no longer exists
-        print('[GameSocketService] Rejoin failed: ${d['error']}');
-        currentGameId = null;
-        currentPlayerId = null;
-        onError?.call('game:rejoin', d['error'] ?? 'Rejoin failed');
-      }
     });
   }
 
@@ -275,11 +278,37 @@ class GameSocketService {
     }, ack: (response) {
       final d = Map<String, dynamic>.from(response);
       if (d['ok'] == true) {
-        currentGameId = d['game']?['id'];
-        currentPlayerId = d['playerId'];
-        onGameJoined?.call(d);
+        if (d['pending'] == true) {
+          onGameJoined?.call(d);
+        } else {
+          currentGameId = d['game']?['id'];
+          currentPlayerId = d['playerId'];
+          onGameJoined?.call(d);
+        }
       } else {
         onError?.call('game:join', d['error'] ?? 'Unknown error');
+      }
+    });
+  }
+
+  void _attemptRejoin() {
+    print('[GameSocketService] Attempting rejoin: game=$currentGameId player=$currentPlayerId');
+
+    _socket.emitWithAck('game:rejoin', {
+      'gameId': currentGameId,
+      'playerId': currentPlayerId,
+      'hasMap': hasMap,
+    }, ack: (response) {
+      final d = Map<String, dynamic>.from(response);
+      if (d['ok'] == true) {
+        print('[GameSocketService] Rejoin successful');
+        onRejoined?.call(d);
+      } else {
+        // Rejoin failed, game or player no longer exists
+        print('[GameSocketService] Rejoin failed: ${d['error']}');
+        currentGameId = null;
+        currentPlayerId = null;
+        onError?.call('game:rejoin', d['error'] ?? 'Rejoin failed');
       }
     });
   }
@@ -330,6 +359,39 @@ class GameSocketService {
     });
   }
 
+  void acceptPlayer(String socketId) {
+    _socket.emitWithAck('player:accept', {
+      'socketId': socketId,
+    }, ack: (response) {
+      final d = Map<String, dynamic>.from(response);
+      if (d['ok'] != true) {
+        onError?.call('player:accept', d['error'] ?? 'Unknown error');
+      }
+    });
+  }
+
+  void rejectPlayer(String socketId) {
+    _socket.emitWithAck('player:reject', {
+      'socketId': socketId,
+    }, ack: (response) {
+      final d = Map<String, dynamic>.from(response);
+      if (d['ok'] != true) {
+        onError?.call('player:reject', d['error'] ?? 'Unknown error');
+      }
+    });
+  }
+
+  void kickPlayer(String playerId) {
+    _socket.emitWithAck('player:kick', {
+      'playerId': playerId,
+    }, ack: (response) {
+      final d = Map<String, dynamic>.from(response);
+      if (d['ok'] != true) {
+        onError?.call('player:kick', d['error'] ?? 'Unknown error');
+      }
+    });
+  }
+
   void sendChat(String text, {String channel = 'all'}) {
     if (!_connected) return;
     _socket.emit('chat:send', {
@@ -350,6 +412,21 @@ class GameSocketService {
       'y': y,
       if (zone != null) 'zone': zone,
       'revealed': revealed,
+    });
+  }
+
+  void submitReplay(Map<String, dynamic> replayJson, {
+    required void Function(bool success) onResult,
+  }) {
+    if (!_connected) {
+      onResult(false);
+      return;
+    }
+    _socket.emitWithAck('replay:submit', {
+      'replay': replayJson,
+    }, ack: (response) {
+      final d = Map<String, dynamic>.from(response);
+      onResult(d['ok'] == true);
     });
   }
 

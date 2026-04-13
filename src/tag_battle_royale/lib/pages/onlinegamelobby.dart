@@ -10,10 +10,13 @@ import '../util/map_file_handler.dart';
 import '../util/gamesession.dart';
 import '../util/player_data.dart';
 import '../util/player.dart';
+import '../util/replay/replay.dart';
+import '../util/replay/replay_file_handler.dart';
 import '../widgets/lobby.dart';
 import '../widgets/hold_button.dart';
 import '../widgets/map_selector.dart';
 import '../widgets/map_viewer.dart';
+import '../widgets/game_banner.dart';
 
 import '../main.dart'; 
 
@@ -53,9 +56,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   String _status = 'Disconnected';
   String? _gameId;
   String? _hostId;
+  bool _pendingAcceptance = false;
 
   // Players
   final List<PlayerData> _players = [];
+  final List<PendingPlayer> _pendingPlayers = [];
   final Map<String, Color> _playerColourMap = {};
   final ScrollController _playersScrollController = ScrollController();
   final List<String> _log = [];
@@ -98,6 +103,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   Timer? _graceTimer;
   int _graceSecondsRemaining = 0;
 
+  // Replay
+  Replay? _replay;
+  bool _replaySubmitted = false;
+  Timer? _replayRetryTimer;
+  final Map<String, Map<String, dynamic>> _receivedReplays = {}; // { playerId: replayJson }
+
   // --- Get properties ---
 
   bool get isHost => widget.isHostOverride ?? (widget.role == ConnectionRole.host);
@@ -134,7 +145,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   @override
   void initState() {
     super.initState();
-    _confettiController = ConfettiController(duration: const Duration(seconds: 5));
+    _confettiController = ConfettiController(duration: const Duration(seconds: 3));
     _socket = GameSocketService(serverUrl: serverUrl);
     _location = LocationService(gameSocketService: _socket!);
     _location!.onLog = (msg) => _addLog(msg);
@@ -172,6 +183,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   void dispose() {
     _unhookCallbacks();
     _graceTimer?.cancel();
+    _replayRetryTimer?.cancel();
     _confettiController.dispose();
     // Only fully leave if the game hasn't started (lobby phase).
     // If the game has started, just disconnect the socket, the server
@@ -236,6 +248,107 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       _displayPlayers.addPlayer(p);
     }
   }
+  // --- Replay ---
+
+  void _startReplay() {
+    final me = _findPlayer(_socket?.currentPlayerId);
+    if (me == null || _gameStartedAt == null) return;
+
+    _replay = Replay(
+      playerID: me.id,
+      playerName: me.name,
+      colour: me.nameColour,
+      gameStartedAt: _gameStartedAt,
+    );
+
+    _location?.onFrameRecorded = (position, zone, role) {
+      _replay?.add(position, zone: zone, role: role);
+    };
+
+    _addLog('Replay recording started');
+  }
+
+  void _submitReplay() {
+    if (_replay == null || _replaySubmitted) return;
+
+    _addLog('Submitting replay (${_replay!.positions.length} frames)...');
+
+    _socket?.submitReplay(_replay!.toJson(), onResult: (success) {
+      if (!mounted) return;
+      if (success) {
+        _replaySubmitted = true;
+        _replayRetryTimer?.cancel();
+        setState(() {});
+        _addLog('Replay submitted successfully');
+      } else {
+        _addLog('Replay submission failed, retrying in 5s...');
+        _scheduleReplayRetry();
+      }
+    });
+  }
+
+  void _scheduleReplayRetry() {
+    _replayRetryTimer?.cancel();
+    _replayRetryTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted && !_replaySubmitted) {
+        _submitReplay();
+      }
+    });
+  }
+
+  Future<void> _assembleAndSaveReplay() async {
+    if (_receivedMap == null) {
+      _addLog('ERROR: No map data for replay assembly');
+      return;
+    }
+
+    // Compute zone closings from game config
+    final Map<int, double> zoneClosings = {};
+    for (int i = 0; i < _activeFaceOrder.length; i++) {
+      final closingTimeMs = _activeGracePeriodMs + ((i + 1) * _activeClosureIntervalMs);
+      zoneClosings[_activeFaceOrder[i]] = closingTimeMs / 1000.0;
+    }
+
+    // Collect all replays (including our own)
+    final List<Replay> replays = [];
+    for (final entry in _receivedReplays.entries) {
+      try {
+        replays.add(Replay.fromJson(entry.value));
+      } catch (e) {
+        _addLog('WARNING: Failed to assemble replay from ${entry.key}: $e');
+      }
+    }
+    // Add our own replay if not already received from server
+    if (_replay != null && !_receivedReplays.containsKey(_socket?.currentPlayerId)) {
+      replays.add(_replay!);
+    }
+
+    _addLog('Assembling replay with ${replays.length} player(s)...');
+
+    try {
+      final replayFile = await ReplayFile.create(
+        map: _receivedMap!,
+        replays: replays,
+        zoneClosings: zoneClosings,
+      );
+      await replayFile.saveReplayFile();
+      _addLog('Replay saved: ${replayFile.replayName}');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Replay saved: ${replayFile.replayName}')),
+        );
+      }
+    } catch (e) {
+      _addLog('ERROR: Failed to save replay: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to save replay')),
+        );
+      }
+    }
+  }
+
   // --- Game finished ---
 
   void _onGameFinished(Map<String, dynamic> data) {
@@ -251,7 +364,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _addLog('Game finished: $reason');
     _confettiController.play();
 
-    // Switch to game tab
+    _submitReplay();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _lobbyKey.currentState?.switchToGameTab();
     });
@@ -270,7 +384,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
       // If reconnecting, the socket will auto-rejoin via _attemptRejoin.
       // If fresh connect and no game yet, create or join.
-      if (!_isReconnecting && _socket!.currentGameId == null) {
+      if (!_isReconnecting && _socket!.currentGameId == null && !_pendingAcceptance) {
         if (isHost) {
           _socket!.createGame(widget.playerName);
         } else if (widget.gameCode != null) {
@@ -280,6 +394,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
       // Notify location service if game is active
       if (_gameStarted) _location?.notifySocketConnected();
+
+      if (_gameFinished && !_replaySubmitted) _submitReplay();
     };
 
     _socket!.onDisconnected = () {
@@ -303,7 +419,15 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
     _socket!.onGameJoined = (data) {
       if (!mounted) return;
+      if (data['pending'] == true) {
+        setState(() => _pendingAcceptance = true);
+        _addLog('Waiting for host to accept...');
+        return;
+      }
+
+      // Direct join (shouldn't happen)
       setState(() {
+        _pendingAcceptance = false;
         _gameId = data['game']['id'];
         _hostId = data['game']['hostId']?.toString();
         _updatePlayerList(data['game']['players']);
@@ -317,6 +441,56 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         isHost: false,
         gameStarted: false,
       );
+    };
+
+    _socket!.onPlayerAccepted = (data) {
+      if (!mounted) return;
+      setState(() {
+        _pendingAcceptance = false;
+        _gameId = data['game']?['id'];
+        _hostId = data['game']?['hostId']?.toString();
+        _updatePlayerList(data['game']?['players'] ?? []);
+      });
+      _socket!.currentGameId = _gameId;
+      _socket!.currentPlayerId = data['playerId']?.toString();
+      _addLog('Accepted into game: $_gameId');
+      GameSession.save(
+        gameId: _socket!.currentGameId!,
+        playerId: _socket!.currentPlayerId!,
+        playerName: widget.playerName,
+        isHost: false,
+        gameStarted: false,
+      );
+    };
+
+    _socket!.onPlayerRejected = (data) {
+      if (!mounted) return;
+      final reason = data['reason']?.toString() ?? 'Join request rejected';
+      _addLog('Rejected: $reason');
+      _showSnackbarAndLeave(reason);
+    };
+
+    _socket!.onPlayerPending = (data) {
+      if (!mounted) return;
+      _updatePendingList(data['pendingPlayers'] as List?);
+      final name = data['playerName']?.toString();
+      if (name != null) _addLog('$name wants to join');
+    };
+
+    _socket!.onPlayerPendingLeft = (data) {
+      if (!mounted) return;
+      _updatePendingList(data['pendingPlayers'] as List?);
+      final name = data['playerName']?.toString();
+      if (name != null) _addLog('Pending player $name disconnected');
+    };
+
+    _socket!.onPlayerKicked = (data) {
+      if (!mounted) return;
+      final reason = data['reason']?.toString() ?? 'You have been kicked';
+      
+      _addLog('Kicked: $reason');
+      GameSession.clear();
+      _showSnackbarAndLeave(reason);
     };
 
     _socket!.onRejoined = (data) {
@@ -343,13 +517,15 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         gameStarted: true,
       );
 
-      // Map and role will be set when the map arrives
       _updateLocationRole();
       _location?.getClosedZones = () => _closedZones;
       _location?.updateCurrentZone = _updateCurrentZone;
       _location?.updatePlayerPosition = _updatePlayerPosition;
-      _startGraceCountdown();
       // Tracking will start when the map arrives
+      if (!_gameFinished) {
+        _startGraceCountdown();
+        if (_replay == null) _startReplay();
+      }
     };
 
     _socket!.onPlayerJoined = (data) {
@@ -386,6 +562,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         _isStarting = false;
         _gameStarted = true;
         _gameStartedAt = DateTime.fromMillisecondsSinceEpoch(data['startedAt']);
+        _pendingPlayers.clear();
       });
       _addLog('Game started!');
 
@@ -410,6 +587,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       _location?.updateCurrentZone = _updateCurrentZone;
       _location?.updatePlayerPosition = _updatePlayerPosition;
       _startGraceCountdown();
+      _startReplay();
       if (_location?.map != null) _location?.startTracking();
     };
 
@@ -527,6 +705,20 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       }
     };
 
+    _socket!.onReplayReceived = (data) {
+      if (!mounted) return;
+      final playerId = data['playerId']?.toString();
+      final replayData = data['replay'] as Map<String, dynamic>?;
+      if (playerId == null || replayData == null) return;
+
+      setState(() => _receivedReplays[playerId] = replayData);
+
+      final playerName = replayData['playerName'] ?? playerId;
+      final frameCount = (replayData['positions'] as List?)?.length ?? 0;
+      _addLog('Replay received from $playerName ($frameCount frames) '
+        '[${_receivedReplays.length}/${_players.length}]');
+    };
+
     _socket!.onGameDisbanded = (data) {
       if (!mounted) return;
       GameSession.clear();
@@ -550,10 +742,16 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
   void _unhookCallbacks() {
     _location?.onLog = null;
+    _location?.onFrameRecorded = null;
     _socket?.onConnected = null;
     _socket?.onDisconnected = null;
     _socket?.onGameCreated = null;
     _socket?.onGameJoined = null;
+    _socket?.onPlayerAccepted = null;
+    _socket?.onPlayerRejected = null;
+    _socket?.onPlayerPending = null;
+    _socket?.onPlayerPendingLeft = null;
+    _socket?.onPlayerKicked = null;
     _socket?.onRejoined = null;
     _socket?.onPlayerJoined = null;
     _socket?.onPlayerLeft = null;
@@ -566,6 +764,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _socket?.onChatHistory = null;
     _socket?.onMapData = null;
     _socket?.onPlayerRoleUpdated = null;
+    _socket?.onReplayReceived = null;
     _socket?.onGameDisbanded = null;
     _socket?.onError = null;
   }
@@ -594,6 +793,47 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       ));
     }
     _setUpDisplay();
+  }
+
+  void _updatePendingList(List? pendingList) {
+    setState(() {
+      _pendingPlayers.clear();
+      if (pendingList != null) {
+        for (final p in pendingList) {
+          final map = Map<String, dynamic>.from(p);
+          final socketId = map['socketId']?.toString() ?? '';
+          final playerName = map['playerName']?.toString() ?? 'Unknown';
+          _pendingPlayers.add(PendingPlayer(
+            socketId: socketId,
+            playerName: playerName,
+          ));
+        }
+      }
+    });
+  }
+
+  Future<void> _kickPlayer(String playerId) async {
+    final player = _findPlayer(playerId);
+    if (player == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Kick player?'),
+        content: Text('Are you sure you want to kick ${player.name}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Kick'),
+           ),
+        ],
+      ),
+    );
+    if (confirmed == true) _socket?.kickPlayer(playerId);
   }
 
   void _updateLocationRole() {
@@ -656,7 +896,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     if (playerId == _socket?.currentPlayerId) _updateLocationRole();
   }
 
-  // --- Host end game ---
+  // --- End game ---
 
   Future<void> _hostEndGame() async {
     final confirmed = await showDialog<bool>(
@@ -671,6 +911,13 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       ),
     );
     if (confirmed == true) _socket?.endGame();
+  }
+
+  Future<void> _leaveAndAssembleReplay() async {
+    await _assembleAndSaveReplay();
+    if (mounted) {
+      Navigator.popUntil(context, (route) => route.isFirst);
+    }
   }
 
   // --- Helpers ---
@@ -689,12 +936,25 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     Navigator.popUntil(context, (route) => route.isFirst);
   }
 
-  /// Show a confirmation box when leaving an active game.
+  /// Show a confirmation box when leaving a game.
   Future<bool> _confirmLeave() async {
     final String title;
     final String content;
 
-    if (_gameStarted) {
+    if (_gameFinished) {
+      if (isHost) {
+        title = 'Leave game?';
+        content = "This game's replay has not been generated.";
+      }
+      else if (!_replaySubmitted) {
+        title = 'Leave game?';
+        content = 'Your replay has not been sent.';
+      }
+      else {
+        // Player's replay was sent, just leave
+        return true;
+      }
+    } else if (_gameStarted) {
       title = 'Leave game?';
       content = 'You will be marked as disconnected. You can reconnect later from the main menu.';
     } else if (isHost) {
@@ -729,70 +989,6 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   //  Ui Builders
   // --------------------------------------------------------------------------
 
-  // --- Banner ---
-
-  Widget? _buildBanner() {
-    if (_gameFinished) {
-      final message = _finishReason == 'host_ended'
-          ? 'Game ended by host'
-          : 'All runners have been caught!';
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-        color: Colors.amber.shade700,
-        child: Column(
-          children: [
-            Text(
-              message,
-              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 2),
-            const Text(
-              'Generating replay...',
-              style: TextStyle(color: Colors.white, fontSize: 14),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_gameStarted && _inGracePeriod && _graceSecondsRemaining > 0) {
-      final isRunner = _myRole == 'runner';
-      final color = isRunner ? Colors.blue : Colors.red;
-      final subtitle = isRunner ? 'Run!' : 'Stay in place!';
-      final minutes = _graceSecondsRemaining ~/ 60;
-      final seconds = _graceSecondsRemaining % 60;
-      final timeStr = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-        color: color,
-        child: Column(
-          children: [
-            Text(
-              'Grace Period: $timeStr',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return null;
-  }
   // --- Sub Tab Builders for Game Tab ---
 
   Widget _buildRulesSubTab() {
@@ -879,11 +1075,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   // --- Players sub-tab ---
 
   Widget _buildPlayersSubTab() {
-    if (_players.isEmpty) {
+    if (_players.isEmpty && _pendingPlayers.isEmpty) {
       return const Center(
           child: Text('No players yet', style: TextStyle(color: Colors.grey)));
     }
-    return _gameFinished ? _buildFinishedPlayerList() : _buildActivePlayerList();
+    if (_gameFinished) return _buildFinishedPlayerList();
+    return _buildActivePlayerList();
   }
 
   Widget _buildFinishedPlayerList() {
@@ -946,7 +1143,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                       width: 4,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: player.connected ? colour : Colors.grey.shade300,
+                        color: colour,
                         borderRadius: const BorderRadius.only(
                           topLeft: Radius.circular(12),
                           bottomLeft: Radius.circular(12),
@@ -981,16 +1178,24 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       );
     }
 
-  // Normal (non-finished) player list
+  // Normal (non-finished game) player list
   Widget _buildActivePlayerList() {
+    final totalPlayers = _players.length + (isHost ? _pendingPlayers.length : 0);
+
     return Scrollbar(
       thumbVisibility: true,
       controller: _playersScrollController,
       child: ListView.builder(
         controller: _playersScrollController,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        itemCount: _players.length,
+        itemCount: totalPlayers,
         itemBuilder: (context, i) {
+          // Pending players
+          if (i >= _players.length) {
+            final pending = _pendingPlayers[i - _players.length];
+            return _buildPendingPlayerCard(pending);
+          }
+
           final player = _players[i];
           final colour = _playerColourMap.putIfAbsent(
             player.id,
@@ -1080,6 +1285,16 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                         style: TextStyle(color: Colors.blue, fontSize: 13),
                       ),
                     ),
+                    TextButton(
+                      onPressed: () => _kickPlayer(player.id),
+                      style: TextButton.styleFrom(
+                        minimumSize: Size.zero,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('Kick',
+                          style: TextStyle(color: Colors.red, fontSize: 13)),
+                    ),
                   ] else
                     const SizedBox(width: 16),
                 ],
@@ -1087,6 +1302,66 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildPendingPlayerCard(PendingPlayer pending) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 6),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+        child: Row(children: [
+          Container(
+            width: 4,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.orange,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                bottomLeft: Radius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              pending.playerName,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: Colors.orange,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() => _pendingPlayers.removeWhere((p) => p.socketId == pending.socketId));
+              _socket?.acceptPlayer(pending.socketId);
+            },
+            style: TextButton.styleFrom(
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Accept',
+                style: TextStyle(color: Colors.green, fontSize: 13)),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() => _pendingPlayers.removeWhere((p) => p.socketId == pending.socketId));
+              _socket?.rejectPlayer(pending.socketId);
+            },
+            style: TextButton.styleFrom(
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Remove',
+                style: TextStyle(color: Colors.red, fontSize: 13)),
+          ),
+        ]),
       ),
     );
   }
@@ -1108,6 +1383,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
   Widget _buildGameTab(BuildContext context) {
     // If not connected, don't display game tab
+    if (_pendingAcceptance) {
+      return _buildPendingView(context);
+    }
+
     if (!_gameStarted &&
         (_status == 'Disconnected' ||
             _status == 'Reconnecting...' ||
@@ -1167,6 +1446,26 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     );
   }
 
+  Widget _buildPendingView(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: 16),
+          const Text('Waiting for host to accept...'),
+          const SizedBox(height: 8),
+          Text(
+            _status == 'Connected' ? 'Connected' : _status,
+            style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+        ]),
+      ),
+    );
+  }
+
   Widget _buildLoadingView(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -1216,23 +1515,39 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   }
 
   Widget _buildFinishedTopSection(BuildContext context) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-        child: Column(
-          children: [
-            Text(
-              'Game Ended',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Colors.amber.shade700, fontWeight: FontWeight.bold),
-            ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        children: [
+          Text(
+            'Game Ended',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Colors.amber.shade700, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text('Code: $_gameId',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          if (isHost) ...[
             const SizedBox(height: 4),
-            Text('Code: $_gameId',
+            Text('Replays received: ${_receivedReplays.length}/${_players.length}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.save),
+                label: const Text('Leave Game and Assemble Replay'),
+                onPressed: _leaveAndAssembleReplay,
+              ),
+            ),
           ],
-        ),
-      );
-    }
+        ]
+      ),
+    );
+  }
 
     Widget _buildActiveTopSection(BuildContext context) {
       final disconnected = _players.where((p) => !p.connected).length;
@@ -1264,7 +1579,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
             if (isHost) ...[
               const SizedBox(height: 12),
               HoldButton(
-                label: 'End Game (hold)',
+                label: 'Manual End Game (hold)',
                 onComplete: _hostEndGame,
                 color: Theme.of(context).colorScheme.error,
                 backgroundColor: Theme.of(context).colorScheme.errorContainer,
@@ -1439,6 +1754,9 @@ Widget _buildLobbyTopSection(BuildContext context) {
 
   @override
   Widget build(BuildContext context) {
+    // Determine if banner should show (SizedBox.shrink if nothing to show)
+    final showBanner = !_pendingAcceptance && (_gameId != null || _gameStarted || _gameFinished);
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -1450,13 +1768,25 @@ Widget _buildLobbyTopSection(BuildContext context) {
       },
       child: LobbyLayout(
         key: _lobbyKey,
-        title: _gameFinished
-          ? 'Game Ended'
-          : _gameStarted
-              ? '${isHost ? "Host" : "Player"}: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}'
-              : _gameId != null
-                  ? 'Lobby: $_gameId'
-                  : 'Connecting...',
+        title: _pendingAcceptance
+          ? const Text('Joining...')
+          : _gameFinished
+            ? const Text('Game Ended')
+            : _gameStarted
+                ? Text.rich(TextSpan(children: [
+                    TextSpan(text: '${widget.playerName}: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}'),
+                    if (isHost)
+                      TextSpan(
+                        text: ' (host)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ]))
+                : _gameId != null
+                    ? Text('Lobby: $_gameId')
+                    : const Text('Connecting...'),
         isConnected: _status == 'Connected',
         players: _players,
         chatMessages: _chatMessages,
@@ -1465,7 +1795,21 @@ Widget _buildLobbyTopSection(BuildContext context) {
         onSendChat: (text) => _socket?.sendChat(text, channel: _activeChannel),
         gameTabBuilder: _buildGameTab,
         mapTabBuilder: (isHost || _gameStarted) ? _buildMapTab : null, // host gets map tab in lobby
-        banner: _buildBanner(),
+        banner: showBanner
+          ? GameBanner(
+              gameStarted: _gameStarted,
+              gameFinished: _gameFinished,
+              finishReason: _finishReason,
+              isHost: isHost,
+              replaySubmitted: _replaySubmitted,
+              receivedReplaysCount: _receivedReplays.length,
+              totalPlayersCount: _players.length,
+              inGracePeriod: _inGracePeriod,
+              graceSecondsRemaining: _graceSecondsRemaining,
+              myRole: _myRole,
+              pendingPlayersCount: _pendingPlayers.length,
+            )
+          : null,
         gameStarted: _gameStarted,
         myRole: _myRole,
         activeChannel: _activeChannel,

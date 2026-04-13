@@ -5,42 +5,26 @@ class Replay {
   final String playerID;
   final String playerName;
   final Color colour;
-  final Stopwatch? timer;
+  final DateTime? gameStartedAt;
   final List<ReplayFrame> positions = [];
 
   Replay({
     required this.playerID,
     required this.playerName,
     required this.colour,
-    this.timer,
+    this.gameStartedAt,
   });
 
-  void start(){
-    if(timer == null){return;}
-    timer!.start();
-  }
-
-  void stop(){
-    if(timer == null){return;}
-    timer!.stop();
-  }
-
-  void reset(){
-    if(timer == null){return;}
-    timer!
-      ..stop()
-      ..reset();
-    positions.clear();
-  }
-
-  void add(ui.Offset position){
-    if(timer == null){return;}
-    positions.add(
-      ReplayFrame(
-        time: timer!.elapsedMilliseconds / 1000.0,
-        position: position,
-      ),
-    );
+  // Add a frame using the elapsed time since gameStartedAt
+  void add(ui.Offset position, {int? zone, String? role}) {
+    if (gameStartedAt == null) return;
+    final elapsed = DateTime.now().difference(gameStartedAt!).inMilliseconds / 1000.0;
+    positions.add(ReplayFrame(
+      time: elapsed,
+      position: position,
+      zone: zone,
+      role: role,
+    ));
   }
 
   Map<String, dynamic> toJson(){
@@ -68,10 +52,14 @@ class Replay {
 class ReplayFrame {
   final double time;
   final ui.Offset position;
+  final int? zone; // faceID the player was in, null if outside all zones
+  final String? role; // runner or chaser at this point in time
 
   ReplayFrame({
     required this.time,
     required this.position,
+    this.zone,
+    this.role,
   });
 
   Map<String, dynamic> toJson(){
@@ -81,18 +69,21 @@ class ReplayFrame {
         'x': position.dx,
         'y': position.dy,
       },
+      if (zone != null) 'zone': zone,
+      if (role != null) 'role': role,
     };
   }
 
   factory ReplayFrame.fromJson(Map<String, dynamic> json){
     final positionJson = json['position'] as Map<String, dynamic>;
-
     return ReplayFrame(
       time: (json['time'] as num).toDouble(),
       position: ui.Offset(
         (positionJson['x'] as num).toDouble(),
         (positionJson['y'] as num).toDouble(),
       ),
+      zone: json['zone'] as int?,
+      role: json['role'] as String?,
     );
   }
 }

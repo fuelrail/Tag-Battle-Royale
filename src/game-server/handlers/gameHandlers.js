@@ -1,36 +1,3 @@
-// --- Handles game events ---
-//
-// Events received from the client:
-//   game:create         { playerName, config }
-//   game:join           { gameId, playerName }
-//   game:rejoin         { gameId, playerId, hasMap }
-//   game:leave          (no payload)
-//   game:start          { map, faceOrder, closureIntervalMs, gracePeriodMs }
-//   game:map:received   (no payload)
-//   player:role         { playerId, role }
-//
-// Events given to client via callback:
-//   game:create   { ok, game, playerId }
-//   game:join     { ok, game, playerId }
-//   game:rejoin   { ok, game, playerId }
-//   game:leave    { ok }
-//   game:start    { ok }
-//   player:role   { ok }
-//
-// Events emitted to players:
-//   player:joined          { playerId, playerName, players }
-//   player:left            { playerId, playerName, remainingPlayers }
-//   player:reconnected     { playerId, playerName, players }
-//   player:disconnected    { playerId, playerName, players }
-//   player:role:updated    { playerId, role }
-//   game:map               { map, faceOrder, closureIntervalMs, gracePeriodMs }
-//   game:started           { gameId, startedAt }
-//   game:disbanded         { reason }
-//   chat:history           { channel, messages }
-//   location:broadcast     (per-socket payload)
-//   error                  { event, message }
-//
-
 const { sendChatHistory } = require("./chatHandlers");
 
 // Emits per-socket payloads.
@@ -123,30 +90,218 @@ function registerGameHandlers(io, socket, gameManager) {
         return emitError(socket, callback, "game:join", `Game "${normalizedId}" has already started`);
       }
 
-      // Add the player
-      const player = gameManager.addPlayerToGame(normalizedId, playerName.trim(), socket.id);
-      console.log(`[game:join] Player "${player.name}" (${player.id}) added to game ${normalizedId} (${game.getConnectedPlayerCount()} connected)`);
+      // Add to pending
+      game.addPendingPlayer(socket.id, playerName.trim());
+      gameManager.addPendingPlayer(socket.id, normalizedId);
+
+      console.log(`[game:join] "${playerName.trim()}" added to pending for game ${normalizedId} (${game.pendingPlayers.size} pending)`);
+
+      // Tell the joining player they're pending
+      callback({ ok: true, pending: true });
+
+      // Notify the host
+      const host = game.getPlayer(game.hostId);
+      if (host && host.connected && host.socketId) {
+        const hostSocket = io.sockets.sockets.get(host.socketId);
+        if (hostSocket) {
+          hostSocket.emit("player:pending", {
+            socketId: socket.id,
+            playerName: playerName.trim(),
+            pendingPlayers: game.getPendingPlayerList(),
+          });
+        }
+      }
+    } catch (err) {
+      emitError(socket, callback, "game:join", err.message);
+    }
+  });
+
+  // Host accepts a pending player
+  socket.on("player:accept", (data, callback) => {
+    try {
+      const playerInfo = gameManager.getPlayerBySocketId(socket.id);
+      if (!playerInfo) {
+        return emitError(socket, callback, "player:accept", "Not in a game");
+      }
+
+      const game = gameManager.getGame(playerInfo.gameId);
+      if (!game) {
+        return emitError(socket, callback, "player:accept", "Game not found");
+      }
+
+      if (playerInfo.id !== game.hostId) {
+        return emitError(socket, callback, "player:accept", "Only the host can accept players");
+      }
+
+      const pendingSocketId = data?.socketId;
+      if (!pendingSocketId) {
+        return emitError(socket, callback, "player:accept", "Socket ID is required");
+      }
+
+      const pending = game.getPendingPlayer(pendingSocketId);
+      if (!pending) {
+        return emitError(socket, callback, "player:accept", "Pending player not found");
+      }
+
+      // Remove from pending
+      game.removePendingPlayer(pendingSocketId);
+      gameManager.removePendingPlayer(pendingSocketId);
+
+      // Add as real player
+      const player = gameManager.addPlayerToGame(game.id, pending.playerName, pendingSocketId);
+      console.log(`[player:accept] "${player.name}" (${player.id}) accepted into game ${game.id}`);
 
       // Join the Socket.IO room
-      socket.join(normalizedId);
-      console.log(`[game:join] Socket ${socket.id} (${player.id}) joined room ${normalizedId}`);
+      const pendingSocket = io.sockets.sockets.get(pendingSocketId);
+      if (pendingSocket) {
+        pendingSocket.join(game.id);
+        console.log(`[game:join] Socket ${pendingSocket} (${player.id}) joined room ${game.id}`);
 
-      // Tell the new player they're in
-      callback({ ok: true, game: game.toJSON(), playerId: player.id });
+        // Tell the accepted player they're in
+        pendingSocket.emit("player:accepted", {
+          game: game.toJSON(),
+          playerId: player.id,
+        });
 
       // Send existing chat history (lobby "all" messages because we know 
       // the game is in lobby phase)
-      sendChatHistory(socket, game, ["all"]);
+        sendChatHistory(pendingSocket, game, ["all"]);
+      }
 
-      // Tell everyone else in the game
-      socket.to(normalizedId).emit("player:joined", {
+      if (callback) callback({ ok: true });
+
+      // Tell everyone in the game
+      io.to(game.id).emit("player:joined", {
         playerId: player.id,
         playerName: player.name,
         players: game.getPlayerList(),
       });
-      console.log(`[game:join] Notified room ${normalizedId} of new player "${player.name}" (${player.id})`);
+      console.log(`[game:join] Notified room ${game.id} of new player "${player.name}" (${player.id})`);
     } catch (err) {
-      emitError(socket, callback, "game:join", err.message);
+      emitError(socket, callback, "player:accept", err.message);
+    }
+  });
+
+  // Host rejects a pending player
+  socket.on("player:reject", (data, callback) => {
+    try {
+      const playerInfo = gameManager.getPlayerBySocketId(socket.id);
+      if (!playerInfo) {
+        return emitError(socket, callback, "player:reject", "Not in a game");
+      }
+
+      const game = gameManager.getGame(playerInfo.gameId);
+      if (!game) {
+        return emitError(socket, callback, "player:reject", "Game not found");
+      }
+
+      if (playerInfo.id !== game.hostId) {
+        return emitError(socket, callback, "player:reject", "Only the host can reject players");
+      }
+
+      const pendingSocketId = data?.socketId;
+      if (!pendingSocketId) {
+        return emitError(socket, callback, "player:reject", "Socket ID is required");
+      }
+
+      const pending = game.getPendingPlayer(pendingSocketId);
+      if (!pending) {
+        return emitError(socket, callback, "player:reject", "Pending player not found");
+      }
+
+      // Remove from pending
+      game.removePendingPlayer(pendingSocketId);
+      gameManager.removePendingPlayer(pendingSocketId);
+
+      console.log(`[player:reject] "${pending.playerName}" rejected from game ${game.id}`);
+
+      // Notify the rejected player
+      const pendingSocket = io.sockets.sockets.get(pendingSocketId);
+      if (pendingSocket) {
+        pendingSocket.emit("player:rejected", {
+          reason: "Host rejected your join request",
+        });
+      }
+
+      if (callback) callback({ ok: true });
+    } catch (err) {
+      emitError(socket, callback, "player:reject", err.message);
+    }
+  });
+
+  socket.on("player:kick", (data, callback) => {
+    const playerInfo = gameManager.getPlayerBySocketId(socket.id);
+    if (!playerInfo) {
+      return emitError(socket, callback, "player:kick", "Not in a game");
+    }
+
+    const game = gameManager.getGame(playerInfo.gameId);
+    if (!game) {
+      return emitError(socket, callback, "player:kick", "Game not found");
+    }
+
+    if (playerInfo.id !== game.hostId) {
+      return emitError(socket, callback, "player:kick", "Only the host can kick players");
+    }
+
+    if (game.status === "finished") {
+      return emitError(socket, callback, "player:kick", "Cannot kick players after game has ended");
+    }
+
+    const targetId = data?.playerId;
+    if (!targetId) {
+      return emitError(socket, callback, "player:kick", "Player ID is required");
+    }
+
+    if (targetId === game.hostId) {
+      return emitError(socket, callback, "player:kick", "Cannot kick yourself");
+    }
+
+    const targetPlayer = game.getPlayer(targetId);
+    if (!targetPlayer) {
+      return emitError(socket, callback, "player:kick", "Player not found");
+    }
+
+    const targetName = targetPlayer.name;
+    const targetSocketId = targetPlayer.socketId;
+    const wasRunner = targetPlayer.role === "runner";
+
+    // Remove from game
+    gameManager.removePlayer(game.id, targetId);
+    if (targetSocketId) {
+      gameManager.socketToPlayer.delete(targetSocketId);
+    }
+
+    console.log(`[player:kick] "${targetName}" (${targetId}) kicked from game ${game.id}`);
+
+    if (callback) callback({ ok: true });
+
+    // Notify the kicked player
+    if (targetSocketId) {
+      const targetSocket = io.sockets.sockets.get(targetSocketId);
+      if (targetSocket) {
+        targetSocket.emit("player:kicked", {
+          reason: "You have been kicked by the host",
+        });
+        targetSocket.leave(game.id);
+      }
+    }
+
+    // Notify remaining players
+    io.to(game.id).emit("player:left", {
+      playerId: targetId,
+      playerName: targetName,
+      remainingPlayers: game.getPlayerList(),
+    });
+
+    // Check if last runner was kicked
+    if (wasRunner && game.status === "active") {
+      _checkGameOver(io, game);
+    }
+
+    // Check map confirmations if in starting phase
+    if (game.allPlayersConfirmedMap() && game.status === "starting") {
+      _finishStarting(io, game, gameManager);
     }
   });
 
@@ -183,7 +338,7 @@ function registerGameHandlers(io, socket, gameManager) {
       // Tell the reconnected player they're back
       callback({ ok: true, game: game.toJSON(), playerId: player.id });
 
-      // Send chat history: "all" always, plus their role channel if game is active
+      // Send chat history
       const channels = ["all"];
       if (game.status !== "waiting") {
         channels.push(player.role);
@@ -198,6 +353,25 @@ function registerGameHandlers(io, socket, gameManager) {
           gracePeriodMs: game.gracePeriodMs,
         });
         console.log(`[game:rejoin] Sent map data to reconnecting player "${player.name} (${player.id})"`);
+      }
+
+      // Send stored replays to rejoining host
+      if (player.id === game.hostId && game.status === "finished") {
+        const storedReplays = game.getStoredReplays();
+        for (const { playerId: rpId, data: rpData } of storedReplays) {
+          socket.emit("replay:received", { playerId: rpId, replay: rpData });
+        }
+        if (storedReplays.length > 0) {
+          console.log(`[game:rejoin] Sent ${storedReplays.length} stored replays to rejoining host`);
+        }
+      }
+
+      // Send pending players to reconnecting host
+      if (player.id === game.hostId && game.pendingPlayers.size > 0) {
+        socket.emit("player:pending", {
+          pendingPlayers: game.getPendingPlayerList(),
+        });
+        console.log(`[game:rejoin] Sent ${game.pendingPlayers.size} pending players to reconnecting host`);
       }
 
       // Restart broadcasting if it was stopped due to all players disconnecting
@@ -252,6 +426,17 @@ function registerGameHandlers(io, socket, gameManager) {
     if (game) {
       if (game.status === "waiting" && playerId === game.hostId) {
         // Host left during lobby, disband
+        const pendingList = game.rejectAllPending();
+        for (const pending of pendingList) {
+          gameManager.removePendingPlayer(pending.socketId);
+          const pendingSocket = io.sockets.sockets.get(pending.socketId);
+          if (pendingSocket) {
+            pendingSocket.emit("player:rejected", {
+              reason: "Game disbanded by host",
+            });
+          }
+        }
+
         io.to(gameId).emit("game:disbanded", { reason: "Host left the game" });
         gameManager.removeGame(gameId);
         console.log(`[game:leave] Game ${gameId} disbanded (host left)`);
@@ -314,6 +499,21 @@ function registerGameHandlers(io, socket, gameManager) {
     //  return emitError(socket, callback, "game:start", "At least one runner is required to start");
     //}
 
+    // Auto-reject all pending players
+    const pendingList = game.rejectAllPending();
+    for (const pending of pendingList) {
+      gameManager.removePendingPlayer(pending.socketId);
+      const pendingSocket = io.sockets.sockets.get(pending.socketId);
+      if (pendingSocket) {
+        pendingSocket.emit("player:rejected", {
+          reason: "Game has started",
+        });
+      }
+    }
+    if (pendingList.length > 0) {
+      console.log(`[game:start] Auto-rejected ${pendingList.length} pending players`);
+    }
+
     console.log(`[game:start] Game ${game.id} starting with ${game.getConnectedPlayerCount()} connected players (triggered by socket ${socket.id})`);
 
     // Store map and enter starting phase
@@ -351,7 +551,6 @@ function registerGameHandlers(io, socket, gameManager) {
     }
   });
 
-  // Roles
   socket.on("player:role", (data, callback) => {
     const playerInfo = gameManager.getPlayerBySocketId(socket.id);
     if (!playerInfo) {
@@ -418,8 +617,6 @@ function registerGameHandlers(io, socket, gameManager) {
     _checkGameOver(io, game);
   });
 
-  // --- Host end game ---
-
   socket.on("game:end", (_, callback) => {
     const playerInfo = gameManager.getPlayerBySocketId(socket.id);
     if (!playerInfo) {
@@ -461,6 +658,46 @@ function registerGameHandlers(io, socket, gameManager) {
     });
 
     console.log(`[game:end] Game ${game.id} finished, host ended`);
+  });
+
+  socket.on("replay:submit", (data, callback) => {
+    const playerInfo = gameManager.getPlayerBySocketId(socket.id);
+    if (!playerInfo) {
+      return emitError(socket, callback, "replay:submit", "Not in a game");
+    }
+
+    const game = gameManager.getGame(playerInfo.gameId);
+    if (!game) {
+      return emitError(socket, callback, "replay:submit", "Game not found");
+    }
+
+    if (game.status !== "finished") {
+      return emitError(socket, callback, "replay:submit", "Game is not finished");
+    }
+
+    const replayData = data?.replay;
+    if (!replayData) {
+      return emitError(socket, callback, "replay:submit", "Replay data is required");
+    }
+
+    // Store on the game
+    game.storeReplay(playerInfo.id, replayData);
+    console.log(`[replay:submit] "${playerInfo.name}" (${playerInfo.id}) submitted replay for game ${game.id} (${game.replays.size}/${game.getPlayerCount()} received)`);
+
+    if (callback) callback({ ok: true });
+
+    // Forward to host
+    const host = game.getPlayer(game.hostId);
+    if (host && host.connected && host.socketId) {
+      const hostSocket = io.sockets.sockets.get(host.socketId);
+      if (hostSocket) {
+        hostSocket.emit("replay:received", {
+          playerId: playerInfo.id,
+          replay: replayData,
+        });
+        console.log(`[replay:submit] Forwarded replay from "${playerInfo.name}" to host`);
+      }
+    }
   });
 
   // Re-check map confirmations if a player disconnects during starting phase

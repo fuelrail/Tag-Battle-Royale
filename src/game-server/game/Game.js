@@ -3,7 +3,8 @@ class Game {
     this.id = id;
     this.hostId = null;
     this.players = new Map(); // { playerId: Player }
-    this.status = "waiting"; // waiting or active or finished
+    this.pendingPlayers = new Map(); // { socketId: { socketId, playerName } }
+    this.status = "waiting"; // waiting or starting or active or finished
     this.createdAt = Date.now();
     this.startedAt = null;
     this.finishedAt = null;
@@ -35,6 +36,9 @@ class Game {
     };
 
     this._catchCounter = 0;
+
+    // Replay storage: { playerId: replayJson }
+    this.replays = new Map();
   }
 
   // --- Players ---
@@ -80,6 +84,29 @@ class Game {
     return Array.from(this.players.values()).map((p) => p.toJSON());
   }
 
+    // --- Pending players ---
+
+  addPendingPlayer(socketId, playerName) {
+    this.pendingPlayers.set(socketId, { socketId, playerName });
+  }
+
+  removePendingPlayer(socketId) {
+    this.pendingPlayers.delete(socketId);
+  }
+
+  getPendingPlayer(socketId) {
+    return this.pendingPlayers.get(socketId);
+  }
+
+  getPendingPlayerList() {
+    return Array.from(this.pendingPlayers.values());
+  }
+
+  rejectAllPending() {
+    const pending = this.getPendingPlayerList();
+    this.pendingPlayers.clear();
+    return pending;
+  }
 
   // --- Catch tracking ---
 
@@ -100,6 +127,19 @@ class Game {
       if (player.role === "runner") count++;
     }
     return count;
+  }
+
+  // --- Replays ---
+
+  storeReplay(playerId, replayData) {
+    this.replays.set(playerId, replayData);
+  }
+
+  getStoredReplays() {
+    return Array.from(this.replays.entries()).map(([playerId, data]) => ({
+      playerId,
+      data,
+    }));
   }
 
   // --- Chat ---
@@ -291,6 +331,8 @@ class Game {
       players: this.getPlayerList(),
       createdAt: this.createdAt,
       startedAt: this.startedAt,
+      finishedAt: this.finishedAt,
+      finishReason: this.finishReason,
       metadata: this.metadata,
     };
   }

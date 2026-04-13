@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:unique_names_generator/unique_names_generator.dart';
 
 import '/pages/offlinegamelobby.dart';
 import '/pages/onlinegamelobby.dart';
@@ -14,6 +15,18 @@ void main() => runApp(const MyApp());
 
 enum GameMode { online, offline }
 enum ConnectionRole { host, join }
+
+String generateRandomName() {
+  final generator = UniqueNamesGenerator(
+    config: Config(
+      dictionaries: [adjectives, animals],
+      separator: '',
+      style: Style.capital,
+      length: 2,
+    ),
+  );
+  return generator.generate();
+}
 
 
 class MyApp extends StatelessWidget {
@@ -326,7 +339,7 @@ class RoleSelectionScreen extends StatefulWidget {
 
 class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   final _lobbyCtrl = 'Game-${Random().nextInt(10000)}';
-  final _nameCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController(text: generateRandomName());
   final _codeCtrl = TextEditingController();
 
   bool get isOnline => widget.mode == GameMode.online;
@@ -364,7 +377,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
 
   void _goHost(BuildContext ctx) {
     final name = _nameCtrl.text.trim().isEmpty
-        ? 'Player'
+        ? generateRandomName()
         : _nameCtrl.text.trim();
     if (isOnline) {
       Navigator.push(
@@ -392,7 +405,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
 
   void _goJoin(BuildContext ctx) {
     final name = _nameCtrl.text.trim().isEmpty
-        ? 'Player'
+        ? generateRandomName()
         : _nameCtrl.text.trim();
     if (isOnline) {
       final code = _codeCtrl.text.trim().toUpperCase();
