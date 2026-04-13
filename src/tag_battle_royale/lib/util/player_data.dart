@@ -7,6 +7,17 @@ class PendingPlayer {
   PendingPlayer({required this.socketId, required this.playerName});
 }
 
+class OfflinePendingPlayer {
+  final String userName;
+  final String displayName;
+  final String advertiserUserName; // which node they're connected to
+  OfflinePendingPlayer({
+    required this.userName,
+    required this.displayName,
+    required this.advertiserUserName,
+  });
+}
+
 const List<Color> playerColours = [
   Colors.red,
   Colors.blue,
@@ -42,5 +53,31 @@ class PlayerData {
     if (isHost) return Colors.blue;
     if (role == 'chaser') return Colors.red;
     return Colors.black;
+  }
+}
+
+class ChatMessage {
+  final String playerId;
+  final String playerName;
+  final String text;
+  final int timestamp;
+  final String channel;
+
+  ChatMessage({
+    required this.playerId,
+    required this.playerName,
+    required this.text,
+    required this.timestamp,
+    required this.channel,
+  });
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    return ChatMessage(
+      playerId: json['playerId'],
+      playerName: json['playerName'],
+      text: json['text'],
+      timestamp: json['timestamp'],
+      channel: json['channel'] ?? 'all',
+    );
   }
 }
