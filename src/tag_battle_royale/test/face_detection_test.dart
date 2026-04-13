@@ -627,7 +627,7 @@ void main(){
         for(final stroke in entry.value.strokes){
           faceDetector.addStroke(stroke);
         }
-        faceDetector.buildGraphAndFindFaces();
+        faceDetector.rebuild();
         expect(faceDetector.graph, isNotNull);
         expect(faceDetector.graph!.faces.length, entry.value.expectedFaces);
       });
