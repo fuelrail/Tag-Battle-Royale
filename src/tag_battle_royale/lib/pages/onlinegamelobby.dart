@@ -15,7 +15,6 @@ import '../util/replay/replay_file_handler.dart';
 import '../widgets/lobby.dart';
 import '../widgets/hold_button.dart';
 import '../widgets/map_selector.dart';
-import '../widgets/map_viewer.dart';
 import '../widgets/game_banner.dart';
 
 import '../main.dart'; 
