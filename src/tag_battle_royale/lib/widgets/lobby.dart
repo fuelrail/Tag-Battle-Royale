@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '/services/game_socket_service.dart';
 import '../util/player_data.dart';
 
 
@@ -19,6 +18,7 @@ class LobbyLayout extends StatefulWidget {
     this.banner,
     this.gameStarted = false,
     this.myRole = 'runner',
+    this.showChannelSelector = true,
     required this.activeChannel,
     required this.onChannelChanged,
   });
@@ -35,6 +35,7 @@ class LobbyLayout extends StatefulWidget {
   final Widget? banner;
   final bool gameStarted;
   final String myRole;
+  final bool showChannelSelector;
   final String activeChannel;
   final void Function(String channel) onChannelChanged;
 
@@ -152,7 +153,7 @@ class LobbyLayoutState extends State<LobbyLayout> {
     return Column(
       children: [
         // Channel selector
-        _buildChannelSelector(),
+        if (widget.showChannelSelector) _buildChannelSelector(),
 
         // Player chips
         SizedBox(
@@ -265,7 +266,8 @@ class LobbyLayoutState extends State<LobbyLayout> {
                 child: TextField(
                   controller: _chatController,
                   textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => _sendChat(),
+                  enabled: widget.isConnected,
+                  onSubmitted: widget.isConnected ? (_) => _sendChat() : null,
                   decoration: InputDecoration(
                     hintText: 'Message...',
                     isDense: true,
@@ -284,9 +286,11 @@ class LobbyLayoutState extends State<LobbyLayout> {
               ),
               const SizedBox(width: 8),
               IconButton(
-                onPressed: _sendChat,
+                onPressed: widget.isConnected ? _sendChat : null,
                 icon: Icon(Icons.send,
-                    color: Theme.of(context).colorScheme.primary),
+                    color: widget.isConnected
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.grey),
               ),
             ],
           ),

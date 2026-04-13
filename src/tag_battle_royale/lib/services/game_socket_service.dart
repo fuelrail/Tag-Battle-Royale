@@ -1,6 +1,8 @@
 import 'dart:ui' show VoidCallback;
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
+import '../util/player_data.dart' show ChatMessage;
+
 typedef JsonCallback = void Function(Map<String, dynamic> data);
 typedef ErrorCallback = void Function(String event, String message);
 typedef LocationBroadcastCallback = void Function(Map<String, PlayerLocationInfo> players);
@@ -52,33 +54,6 @@ class PlayerLocationInfo {
       y: loc?['y']?.toDouble(),
       locationAge: json['locationAge'],
       disconnectedAge: json['disconnectedAge'],
-    );
-  }
-}
-
-/// Chat message received from the server.
-class ChatMessage {
-  final String playerId;
-  final String playerName;
-  final String text;
-  final int timestamp;
-  final String channel;
-
-  ChatMessage({
-    required this.playerId,
-    required this.playerName,
-    required this.text,
-    required this.timestamp,
-    required this.channel,
-  });
-
-  factory ChatMessage.fromJson(Map<String, dynamic> json) {
-    return ChatMessage(
-      playerId: json['playerId'],
-      playerName: json['playerName'],
-      text: json['text'],
-      timestamp: json['timestamp'],
-      channel: json['channel'] ?? 'all',
     );
   }
 }
