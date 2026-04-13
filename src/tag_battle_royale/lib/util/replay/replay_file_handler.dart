@@ -12,7 +12,7 @@ class ReplayFile {
   final String id;
   final String fileName;
   final String replayName;
-  final MapFile map;
+  final String mapId;
   final List<Replay> replays;
 
   /// faceID -> closing time in seconds
@@ -22,7 +22,7 @@ class ReplayFile {
     required this.id,
     required this.fileName,
     required this.replayName,
-    required this.map,
+    required this.mapId,
     List<Replay>? replays,
     Map<int, double>? zoneClosings,
   })  : replays = replays ?? [],
@@ -65,7 +65,7 @@ class ReplayFile {
       'id': id,
       'fileName': fileName,
       'replayName': replayName,
-      'map': map.toJson(),
+      'mapId': mapId,
       'replays': replays.map((r) => r.toJson()).toList(),
       'zoneClosings': zoneClosings.map(
         (key, value) => MapEntry(key.toString(), value),
@@ -85,7 +85,7 @@ class ReplayFile {
       id: json['id'] as String,
       fileName: json['fileName'] as String,
       replayName: json['replayName'] as String,
-      map: MapFile.fromJson(json['map'] as Map<String, dynamic>),
+      mapId: json['mapId'] as String,
       replays: (json['replays'] as List)
           .map((r) => Replay.fromJson(Map<String, dynamic>.from(r)))
           .toList(),
@@ -119,7 +119,7 @@ class ReplayFile {
       id: id,
       fileName: fileName,
       replayName: replayName,
-      map: map,
+      mapId: map.id,
       replays: replays,
       zoneClosings: zoneClosings,
     );

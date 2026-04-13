@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:confetti/confetti.dart';
+import 'package:tag_battle_royale/widgets/game_display.dart';
 
 import '../services/game_socket_service.dart';
 import '../services/location_service.dart';
 import '../util/map_file_handler.dart';
 import '../util/gamesession.dart';
 import '../util/player_data.dart';
+import '../util/player.dart';
 import '../util/replay/replay.dart';
 import '../util/replay/replay_file_handler.dart';
 import '../widgets/lobby.dart';
@@ -61,6 +64,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   final Map<String, Color> _playerColourMap = {};
   final ScrollController _playersScrollController = ScrollController();
   final List<String> _log = [];
+
+  final Players _displayPlayers = Players();
+  final ValueNotifier<int?> _displayCurrentZone = ValueNotifier(null);
+  final ValueNotifier<Set<int>> _displayClosedZones = ValueNotifier({});
 
   // Chat
   final Map<String, List<ChatMessage>> _chatMessages = {
@@ -120,7 +127,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     if (_gameStartedAt == null || _activeFaceOrder.isEmpty) return {};
     final elapsed = DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs;
     if (elapsed <= 0) return {};
-    return _activeFaceOrder.take(elapsed ~/ _activeClosureIntervalMs).toSet();
+
+    final zones = _activeFaceOrder.take(elapsed ~/ _activeClosureIntervalMs).toSet();
+    if(_displayClosedZones.value.length!= zones.length){_displayClosedZones.value = zones;}
+    print(zones);
+    return zones;
   }
 
   /// Find a player by ID.
@@ -219,6 +230,24 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     });
   }
 
+  void _updateCurrentZone(int? id){
+    if(id != _displayCurrentZone.value){
+      _displayCurrentZone.value = id;
+    }
+  }
+
+  void _updatePlayerPosition(Offset? pos){;
+    if(_socket!.currentPlayerId == null){return;}
+    _displayPlayers.updatePlayerPosition(_socket!.currentPlayerId!, pos);
+    _displayPlayers.update();
+  }
+  
+  void _setUpDisplay(){
+    for(final player in _players){
+      final p = Player(id: player.id,name: player.name,colour:player.nameColour);
+      _displayPlayers.addPlayer(p);
+    }
+  }
   // --- Replay ---
 
   void _startReplay() {
@@ -490,6 +519,9 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
       _updateLocationRole();
       _location?.getClosedZones = () => _closedZones;
+      _location?.updateCurrentZone = _updateCurrentZone;
+      _location?.updatePlayerPosition = _updatePlayerPosition;
+      // Tracking will start when the map arrives
       if (!_gameFinished) {
         _startGraceCountdown();
         if (_replay == null) _startReplay();
@@ -552,6 +584,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       // Set role and start tracking
       _updateLocationRole();
       _location?.getClosedZones = () => _closedZones;
+      _location?.updateCurrentZone = _updateCurrentZone;
+      _location?.updatePlayerPosition = _updatePlayerPosition;
       _startGraceCountdown();
       _startReplay();
       if (_location?.map != null) _location?.startTracking();
@@ -591,6 +625,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         if (_gameStarted && !_location!.isTracking) {
           _updateLocationRole();
           _location?.getClosedZones = () => _closedZones;
+          _location?.updateCurrentZone = _updateCurrentZone;
+          _location?.updatePlayerPosition = _updatePlayerPosition;
           _location?.startTracking();
         }
 
@@ -628,8 +664,16 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         final pos = p.x != null
           ? '(${p.x!.toStringAsFixed(1)}, ${p.y!.toStringAsFixed(1)})'
           : 'no pos';
+          // update user position display
+          final point = p.status=="active" 
+          ? ui.Offset(p.x!,p.y!) 
+          : null;
+          _displayPlayers.updatePlayerPosition(p.playerId, point);
+          
+
         return '${p.playerName}(${p.role}) $pos ${p.status}';
       }).join(', ')}');
+      _displayPlayers.update();
       setState(() {
         _playerLocations
           ..clear()
@@ -748,6 +792,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         caughtOrder: caughtOrder,
       ));
     }
+    _setUpDisplay();
   }
 
   void _updatePendingList(List? pendingList) {
@@ -1671,7 +1716,12 @@ Widget _buildLobbyTopSection(BuildContext context) {
       final showCaughtButton = amRunner && !_inGracePeriod && !_gameFinished;
       return Stack(
         children: [
-          MapViewer(map: _receivedMap!, showAppBar: false),
+          GameDisplay(
+            map: _receivedMap!,
+            closedZonesNotifier: _displayClosedZones,
+            currentZoneNotifier: _displayCurrentZone,
+            players: _displayPlayers,
+          ),
           if (amRunner)
             Positioned(
               left: 24,

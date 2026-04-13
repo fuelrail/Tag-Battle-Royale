@@ -35,6 +35,9 @@ class LocationService {
 
   /// Get the current set of closed zone faceIDs.
   Set<int> Function()? getClosedZones;
+  // provided by lobby and updates the current zone for displaying
+  void Function(int? id)? updateCurrentZone;
+  void Function(Offset pos)? updatePlayerPosition;
 
   /// Called each time a position is sent.
   void Function(Offset position, int? zone, String role)? onFrameRecorded;
@@ -182,6 +185,8 @@ class LocationService {
 
           final face = map!.graph.pointInFace(imageOffset);
           int? zone = face?.faceID;
+          updateCurrentZone?.call(zone);
+          updatePlayerPosition?.call(imageOffset);
 
           bool revealed = true;
           if (role == 'runner') {
@@ -207,6 +212,7 @@ class LocationService {
           _log('Sent position (${imageOffset.dx.toStringAsFixed(1)}, ${imageOffset.dy.toStringAsFixed(1)})'
               '${zone != null ? ' zone=$zone' : ''}'
               ' revealed=$revealed');
+          getClosedZones?.call();
           //final closedZones = getClosedZones?.call() ?? {};
           //_log('Zone check: zone=$zone closedZones=$closedZones revealed=$revealed getClosedZones=${getClosedZones != null}');
           _newPositionArrived = false;

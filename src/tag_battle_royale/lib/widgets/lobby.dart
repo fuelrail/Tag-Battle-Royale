@@ -301,22 +301,40 @@ class LobbyLayoutState extends State<LobbyLayout> {
 
   @override
   Widget build(BuildContext context) {
+    final isFullscreenMap = _currentTab == 0 && widget.gameStarted == true;
+
     return Scaffold(
-      resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        title: widget.title,
-        actions: [
-          // Connection status indicator
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Icon(
-              widget.isConnected ? Icons.cloud_done : Icons.cloud_off,
-              color: widget.isConnected ? Colors.green : Colors.red,
-            ),
+    extendBodyBehindAppBar: isFullscreenMap,
+    extendBody: isFullscreenMap,
+    resizeToAvoidBottomInset: true,
+    appBar: AppBar(
+      title: widget.title,
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 16),
+          child: Icon(
+            widget.isConnected ? Icons.cloud_done : Icons.cloud_off,
+            color: widget.isConnected ? Colors.green : Colors.red,
           ),
+        ),
+      ],
+    ),
+    body: isFullscreenMap
+    ? Stack(
+        children: [
+          Positioned.fill(
+            child: widget.mapTabBuilder?.call(context) ?? _buildDefaultMapTab(),
+          ),
+          if (widget.banner != null)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + kToolbarHeight,
+              left: 0,
+              right: 0,
+              child: widget.banner!,
+            ),
         ],
-      ),
-      body: Column(
+      )
+    : Column(
         children: [
           if (widget.banner != null) widget.banner!,
           Expanded(

@@ -27,7 +27,10 @@ class _ReplayPageState extends State<ReplayPage> {
   Widget build(BuildContext context){
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Replays"),
+        iconTheme: IconThemeData(
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        title: Text("Replays", style: Theme.of(context).textTheme.titleLarge,),
       ),
       body: FutureBuilder<List<ReplayFile>>(
         future: _replaysFuture,
@@ -58,26 +61,20 @@ class _ReplayPageState extends State<ReplayPage> {
               final replayFile = replays[index];
 
               return ListTile(
-                leading: const Icon(Icons.play_circle_outline),
-                title: Text(replayFile.replayName),
-                subtitle: Text(replayFile.map.mapName),
+                leading: Icon(Icons.play_circle_outline, color: Theme.of(context).colorScheme.primary,),
+                title: Text(replayFile.replayName, style: Theme.of(context).textTheme.titleLarge),
                 onTap: () async {
-                  final image = await replayFile.map.getImage();
-
-                  if(!context.mounted) return;
-
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => ReplayViewer(
                         replayFile: replayFile,
-                        image: image,
                       ),
                     ),
                   );
                 },
                 trailing: IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
+                  icon: Icon(Icons.delete, color: Theme.of(context).colorScheme.error),
                   onPressed: () async {
                     final confirm = await showDialog<bool>(
                       context: context,

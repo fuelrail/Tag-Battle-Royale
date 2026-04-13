@@ -67,6 +67,6 @@ class FacePainter extends CustomPainter{
 
   @override
   bool shouldRepaint(covariant FacePainter oldDelegate){
-    return false;
+    return oldDelegate.faces != faces || oldDelegate.drawLabel != drawLabel;
   }
 }

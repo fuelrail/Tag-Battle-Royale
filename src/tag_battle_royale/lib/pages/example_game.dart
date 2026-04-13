@@ -43,8 +43,8 @@ class _ExampleGameState extends State<ExampleGame> {
   /// faceID -> closing time in seconds
   final Map<int, double> _zoneClosings = {};
 
-  final ValueNotifier<Face?> _currentZoneNotifier = ValueNotifier(null);
-  final ValueNotifier<List<Face>> _closedFacesNotifier = ValueNotifier([]);
+  final ValueNotifier<int?> _currentZoneNotifier = ValueNotifier(null);
+  final ValueNotifier<Set<int>> _closedFacesNotifier = ValueNotifier({});
 
   @override
   void initState(){
@@ -88,7 +88,8 @@ class _ExampleGameState extends State<ExampleGame> {
           _replay.add(point);
           final currentFace = widget.map.graph.pointInFace(point);
           widget.players.updatePlayerPosition(widget.playerID, point);
-          _currentZoneNotifier.value = currentFace;
+          widget.players.update();
+          _currentZoneNotifier.value = currentFace?.faceID;
         } catch (_){}
       },
     );
@@ -116,7 +117,7 @@ class _ExampleGameState extends State<ExampleGame> {
         final randomFace = openFaces[_random.nextInt(openFaces.length)];
 
         _closedFaces.add(randomFace);
-        _closedFacesNotifier.value = List<Face>.from(_closedFaces);
+        _closedFacesNotifier.value = _closedFaces.map<int>((f) => f.faceID).toSet();
 
         _zoneClosings[randomFace.faceID] = DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0;
       },
@@ -198,6 +199,7 @@ class _ExampleGameState extends State<ExampleGame> {
     }
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Example Game'),
         actions: [
@@ -210,7 +212,7 @@ class _ExampleGameState extends State<ExampleGame> {
       body: GameDisplay(
         map: widget.map,
         currentZoneNotifier: _currentZoneNotifier,
-        closedFacesNotifier: _closedFacesNotifier,
+        closedZonesNotifier: _closedFacesNotifier,
         players: widget.players,
         showPlayerNames: false,
       ),

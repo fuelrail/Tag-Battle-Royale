@@ -17,15 +17,15 @@ class GameDisplay extends StatefulWidget {
     super.key,
     required this.map,
     required this.currentZoneNotifier,
-    required this.closedFacesNotifier,
+    required this.closedZonesNotifier,
     required this.players,
     this.showPlayerNames = false,
   });
 
   final MapFile map;
 
-  final ValueNotifier<Face?> currentZoneNotifier;
-  final ValueNotifier<List<Face>> closedFacesNotifier;
+  final ValueNotifier<int?> currentZoneNotifier;
+  final ValueNotifier<Set<int>> closedZonesNotifier;
 
   final Players players;
 
@@ -53,10 +53,8 @@ class _GameDisplayState extends State<GameDisplay> {
   @override
   Widget build(BuildContext context){
     if(image == null){
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
+      return const Center(
+        child: CircularProgressIndicator(),
       );
     }
 
@@ -65,10 +63,11 @@ class _GameDisplayState extends State<GameDisplay> {
       image!.height.toDouble(),
     );
 
-    return Scaffold(
-      body: MapTransform(
+    return SizedBox.expand(
+      child: MapTransform(
         image: image!,
         child: Stack(
+          fit: StackFit.expand,
           children: [
             RepaintBoundary(
               child: CustomPaint(
@@ -85,7 +84,8 @@ class _GameDisplayState extends State<GameDisplay> {
               child: CustomPaint(
                 size: imageSize,
                 painter: ClosedZonePainter(
-                  facesNotifier: widget.closedFacesNotifier,
+                  facesNotifier: widget.closedZonesNotifier,
+                  faces: widget.map.graph.faces,
                 ),
               ),
             ),
@@ -94,6 +94,7 @@ class _GameDisplayState extends State<GameDisplay> {
                 size: imageSize,
                 painter: CurrentZonePainter(
                   faceNotifier: widget.currentZoneNotifier,
+                  faces: widget.map.graph.faces,
                 ),
               ),
             ),

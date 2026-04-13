@@ -65,14 +65,14 @@ class _MapViewerState extends State<MapViewer> {
       appBar: widget.showAppBar
         ? AppBar(
             title: Text(widget.map.mapName),
-            titleTextStyle: const TextStyle(
-              color: Color.fromARGB(255, 255, 255, 255),
+            titleTextStyle: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
               fontSize: 20,
             ),
-            iconTheme: const IconThemeData(
-              color: Color.fromARGB(255, 255, 255, 255),
+            iconTheme: IconThemeData(
+              color: Theme.of(context).colorScheme.primary,
             ),
-            backgroundColor: const Color.fromARGB(60, 0, 0, 0),
+            backgroundColor: Theme.of(context).colorScheme.onPrimary,
             elevation: 0,
           )
         : null,

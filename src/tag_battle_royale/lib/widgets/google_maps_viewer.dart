@@ -127,41 +127,28 @@ class GoogleMapsState extends State<GoogleMaps> {
     }
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+            title: Text("Choose an area to Play!"),
+            titleTextStyle: Theme.of(context).textTheme.titleLarge,
+            iconTheme: IconThemeData(
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            backgroundColor: Theme.of(context).colorScheme.onPrimary,
+            elevation: 0,
+          ) ,
       body: Stack(
         children: [
           GoogleMap(
-            mapType: MapType.hybrid,
+            mapType: MapType.normal,
             initialCameraPosition: _userPosition ?? _dublinSpire,
             myLocationEnabled: _showUserLocation,
-            myLocationButtonEnabled: true,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
             onCameraMove: (pos){setState(() => _userPosition = pos);},
             onMapCreated: (GoogleMapController controller){
               if(!_controller.isCompleted){_controller.complete(controller);}
             },
-          ),
-
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Text(
-                    'Choose an area to Play!',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ),
           ),
           SafeArea(
             child: Padding(
