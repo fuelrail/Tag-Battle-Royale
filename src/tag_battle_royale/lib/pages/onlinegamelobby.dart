@@ -15,7 +15,6 @@ import '../util/replay/replay_file_handler.dart';
 import '../widgets/lobby.dart';
 import '../widgets/hold_button.dart';
 import '../widgets/map_selector.dart';
-import '../widgets/map_viewer.dart';
 import '../widgets/game_banner.dart';
 
 import '../main.dart'; 
@@ -32,6 +31,7 @@ class OnlineConnectionScreen extends StatefulWidget {
     this.gameCode,
     this.playerId,
     this.isHostOverride,
+    this.resumeSession,
   });
 
   final ConnectionRole role;
@@ -39,6 +39,7 @@ class OnlineConnectionScreen extends StatefulWidget {
   final String? gameCode;
   final String? playerId;
   final bool? isHostOverride;
+  final GameSessionData? resumeSession;
 
   @override
   State<OnlineConnectionScreen> createState() => _OnlineConnectionScreenState();
@@ -109,6 +110,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   bool _replaySubmitted = false;
   Timer? _replayRetryTimer;
   final Map<String, Map<String, dynamic>> _receivedReplays = {}; // { playerId: replayJson }
+  int _framesSinceLastSave = 0;
 
   // --- Get properties ---
 
@@ -164,6 +166,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       _gameId = widget.gameCode;
     }
 
+    if (widget.resumeSession != null && widget.resumeSession!.gameStarted) {
+      _initFromSession(widget.resumeSession!);
+    }
+
     _socket!.connect();
 
     _addLog('Online mode: ${_isReconnecting ? "reconnecting" : isHost ? "hosting" : "joining"}');
@@ -182,6 +188,86 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         }
       }
     });
+  }
+
+  void _initFromSession(GameSessionData session) {
+    _gameId = session.gameId;
+    _gameStarted = true;
+    _gameStartedAt = session.gameStartedAt != null
+        ? DateTime.fromMillisecondsSinceEpoch(session.gameStartedAt!)
+        : null;
+
+    // Restore config
+    _activeFaceOrder = session.faceOrder ?? [];
+    _activeClosureIntervalMs = session.closureIntervalMs ?? 15 * 60 * 1000;
+    _activeGracePeriodMs = session.gracePeriodMs ?? 90 * 1000;
+
+    // Restore map
+    if (session.mapJson != null) {
+      try {
+        _receivedMap = MapFile.fromJson(session.mapJson!);
+        _location?.map = _receivedMap;
+        _socket!.hasMap = true;
+      } catch (e) {
+        _addLog('Failed to restore map: $e');
+      }
+    }
+
+    // Restore players
+    if (session.players != null) {
+      for (final p in session.players!) {
+        _players.add(PlayerData(
+          id: p['id'] ?? '',
+          name: p['name'] ?? '',
+          role: p['role'] ?? 'runner',
+          isHost: p['isHost'] == true,
+          connected: p['connected'] ?? true,
+          caughtOrder: p['caughtOrder'],
+        ));
+      }
+      _hostId = _players.where((p) => p.isHost).firstOrNull?.id;
+      _setUpDisplay();
+    }
+
+    // Restore replay
+    if (session.replayJson != null && _gameStartedAt != null) {
+      try {
+        final restored = Replay.fromJson(session.replayJson!);
+        final oldPositions = restored.positions;
+        final me = _findPlayer(_socket?.currentPlayerId);
+        _replay = Replay(
+          playerID: me?.id ?? session.playerId,
+          playerName: me?.name ?? session.playerName,
+          colour: me?.nameColour ?? Colors.black,
+          gameStartedAt: _gameStartedAt,
+        );
+        _replay!.positions.addAll(oldPositions);
+        _addLog('Restored replay with ${oldPositions.length} frames');
+      } catch (e) {
+        _addLog('Failed to restore replay: $e');
+      }
+    }
+
+    // Set role from session
+    _updateLocationRole();
+    _location?.getClosedZones = () => _closedZones;
+    _location?.updateCurrentZone = _updateCurrentZone;
+    _location?.updatePlayerPosition = _updatePlayerPosition;
+
+    // Set up frame recording with persistence
+    _location?.onFrameRecorded = (position, zone, role) {
+      _replay?.add(position, zone: zone, role: role);
+      _framesSinceLastSave++;
+      if (_framesSinceLastSave >= 3) {
+        _framesSinceLastSave = 0;
+        _persistReplay();
+      }
+    };
+
+    _startGraceCountdown();
+    if (_receivedMap != null) _location?.startTracking();
+
+    _addLog('Resumed from saved session (connecting in background...)');
   }
 
   @override
@@ -273,6 +359,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
     _location?.onFrameRecorded = (position, zone, role) {
       _replay?.add(position, zone: zone, role: role);
+      _framesSinceLastSave++;
+      if (_framesSinceLastSave >= 3) {
+        _framesSinceLastSave = 0;
+        _persistReplay();
+      }
     };
 
     _addLog('Replay recording started');
@@ -290,6 +381,74 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         _addLog("Couldn't save map -> $e");
       }
     } else{_addLog("Map already saved Locally");}
+  }
+  
+  Future<void> _persistReplay() async {
+    if (_replay == null) return;
+    try {
+      await GameSession.updateReplay(_replay!.toJson());
+    } catch (e) {
+      print('Failed to persist replay: $e');
+    }
+  }
+
+  void _saveFullSession() {
+    if (_socket?.currentGameId == null || _socket?.currentPlayerId == null) return;
+    GameSession.save(
+      gameId: _socket!.currentGameId!,
+      playerId: _socket!.currentPlayerId!,
+      playerName: widget.playerName,
+      isHost: isHost,
+      gameStarted: _gameStarted,
+      role: _myRole,
+      gameStartedAt: _gameStartedAt?.millisecondsSinceEpoch,
+      faceOrder: _activeFaceOrder.isNotEmpty ? _activeFaceOrder : null,
+      closureIntervalMs: _activeClosureIntervalMs,
+      gracePeriodMs: _activeGracePeriodMs,
+      mapJson: _receivedMap?.toJson(),
+      replayJson: _replay?.toJson(),
+      players: _players.map((p) => {
+        'id': p.id,
+        'name': p.name,
+        'role': p.role,
+        'isHost': p.isHost,
+        'connected': p.connected,
+        'caughtOrder': p.caughtOrder,
+      }).toList(),
+    );
+  }
+
+  Future<void> _restoreOrStartReplay() async {
+    final session = await GameSession.load();
+    if (session?.replayJson != null && _gameStartedAt != null) {
+      try {
+        final restored = Replay.fromJson(session!.replayJson!);
+        final oldPositions = restored.positions;
+        final me = _findPlayer(_socket?.currentPlayerId);
+        _replay = Replay(
+          playerID: me?.id ?? _socket!.currentPlayerId!,
+          playerName: me?.name ?? widget.playerName,
+          colour: me?.nameColour ?? Colors.black,
+          gameStartedAt: _gameStartedAt,
+        );
+        _replay!.positions.addAll(oldPositions);
+        _addLog('Restored replay with ${oldPositions.length} frames');
+
+        _location?.onFrameRecorded = (position, zone, role) {
+          _replay?.add(position, zone: zone, role: role);
+          _framesSinceLastSave++;
+          if (_framesSinceLastSave >= 3) {
+            _framesSinceLastSave = 0;
+            _persistReplay();
+          }
+        };
+      } catch (e) {
+        _addLog('Failed to restore replay: $e');
+        _startReplay();
+      }
+    } else {
+      _startReplay();
+    }
   }
 
   void _submitReplay() {
@@ -462,13 +621,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       });
       _addLog('Joined game: $_gameId');
       // Save session so joiners can reconnect to lobby if they disconnect
-      GameSession.save(
-        gameId: _socket!.currentGameId!,
-        playerId: _socket!.currentPlayerId!,
-        playerName: widget.playerName,
-        isHost: false,
-        gameStarted: false,
-      );
+      _saveFullSession();
     };
 
     _socket!.onPlayerAccepted = (data) {
@@ -482,13 +635,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       _socket!.currentGameId = _gameId;
       _socket!.currentPlayerId = data['playerId']?.toString();
       _addLog('Accepted into game: $_gameId');
-      GameSession.save(
-        gameId: _socket!.currentGameId!,
-        playerId: _socket!.currentPlayerId!,
-        playerName: widget.playerName,
-        isHost: false,
-        gameStarted: false,
-      );
+      _saveFullSession();
     };
 
     _socket!.onPlayerRejected = (data) {
@@ -521,7 +668,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       _showSnackbarAndLeave(reason);
     };
 
-    _socket!.onRejoined = (data) {
+    _socket!.onRejoined = (data) async {
       if (!mounted) return;
 
       setState(() {
@@ -537,13 +684,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       });
       _addLog('Rejoined game: $_gameId');
 
-      GameSession.save(
-        gameId: _socket!.currentGameId!,
-        playerId: _socket!.currentPlayerId!,
-        playerName: widget.playerName,
-        isHost: isHost,
-        gameStarted: true,
-      );
+      _saveFullSession();
 
       _updateLocationRole();
       _location?.getClosedZones = () => _closedZones;
@@ -552,13 +693,14 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       // Tracking will start when the map arrives
       if (!_gameFinished) {
         _startGraceCountdown();
-        if (_replay == null) _startReplay();
+        if (_replay == null) await _restoreOrStartReplay();
       }
     };
 
     _socket!.onPlayerJoined = (data) {
       if (!mounted) return;
       setState(() => _updatePlayerList(data['players']));
+      if (_gameStarted) _saveFullSession();
       _addLog('${data['playerName']} joined');
     };
 
@@ -574,12 +716,14 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _socket!.onPlayerReconnected = (data) {
       if (!mounted) return;
       setState(() => _updatePlayerList(data['players']));
+      if (_gameStarted) _saveFullSession();
       _addLog('${data['playerName']} reconnected');
     };
 
     _socket!.onPlayerDisconnected = (data) {
       if (!mounted) return;
       setState(() => _updatePlayerList(data['players']));
+      if (_gameStarted) _saveFullSession();
       _addLog('${data['playerName']} disconnected');
     };
 
@@ -601,13 +745,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       }
 
       // Save session for reconnection
-      GameSession.save(
-        gameId: _socket!.currentGameId!,
-        playerId: _socket!.currentPlayerId!,
-        playerName: widget.playerName,
-        isHost: isHost,
-        gameStarted: true,
-      );
+      _saveFullSession();
 
       // Set role and start tracking
       _updateLocationRole();
@@ -667,15 +805,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
             'closure interval: ${_activeClosureIntervalMs ~/ 1000}s, '
             'grace period: ${_activeGracePeriodMs ~/ 1000}s');
           // Save session for host and joiners for active game
-          GameSession.save(
-            gameId: _socket!.currentGameId!,
-            playerId: _socket!.currentPlayerId!,
-            playerName: widget.playerName,
-            isHost: isHost,
-            gameStarted: true,
-          );
+          _saveFullSession();
         } else {
           _addLog('Map received');
+          _saveFullSession();
           _addLog('Face order: ${_activeFaceOrder.length} zones, '
             'closure interval: ${_activeClosureIntervalMs ~/ 1000}s, '
             'grace period: ${_activeGracePeriodMs ~/ 1000}s');
@@ -727,6 +860,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       // If this player's role changed, update LocationService
       if (playerId == _socket?.currentPlayerId) {
         _updateLocationRole();
+        GameSession.updateRole(role);
         if (role == 'chaser') {
           setState(() {
             _chatMessages['runner'] = [];
@@ -924,7 +1058,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     setState(() => player.role = player.role == 'runner' ? 'chaser' : 'runner');
 
     _socket?.switchPlayerRole(playerId, player.role);
-    if (playerId == _socket?.currentPlayerId) _updateLocationRole();
+    if (playerId == _socket?.currentPlayerId) {
+      _updateLocationRole();
+      GameSession.updateRole(player.role);
+    }
   }
 
   // --- End game ---

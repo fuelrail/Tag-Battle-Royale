@@ -15,7 +15,7 @@ import '../util/map_file_handler.dart';
 /// For runners, performs zone detection and determines if the runner
 /// should be revealed to chasers based on zone closures and grace period.
 class LocationService {
-  final GameSocketService gameSocketService;
+  final GameSocketService? gameSocketService;
   final int sendIntervalMs;
   final int distanceFilter;
   final int retryDelayMs;
@@ -47,7 +47,7 @@ class LocationService {
   void Function(String message)? onLog;
 
   LocationService({
-    required this.gameSocketService,
+    this.gameSocketService,
     this.sendIntervalMs = 5000, // send every x seconds
     this.distanceFilter = 0, // optional filter if we only want to update when we move
     this.retryDelayMs = 5000, // retry every x seconds
@@ -55,6 +55,7 @@ class LocationService {
 
   bool get isTracking => _tracking;
   bool get hasPosition => _latestPosition != null;
+  bool get _hasSocket => gameSocketService != null;
 
   /// Start tracking. GPS events update [_latestPosition], and a timer
   /// sends the latest position to the server every [sendIntervalMs].
@@ -65,12 +66,19 @@ class LocationService {
     }
     _tracking = true;
     _retryCount = 0;
-    _socketConnected = gameSocketService.isConnected;
+    if (_hasSocket) {
+      _socketConnected = gameSocketService!.isConnected;
+    } else {
+      _socketConnected = false;
+    }
 
     _startGpsStream();
 
     // Only start the send timer if socket is connected
-    if (_socketConnected) {
+    if (_hasSocket && _socketConnected) {
+      _startSendTimer();
+    } else if (!_hasSocket) {
+      // Offline mode, start the processing timer anyway
       _startSendTimer();
     } else {
       _log('Socket not connected, GPS is running but not sending');
@@ -81,13 +89,14 @@ class LocationService {
 
   // Sockets state
   void notifySocketConnected() {
-    if (!_tracking) return;
+    if (!_tracking || !_hasSocket) return;
     _socketConnected = true;
     _log('Socket reconnected, resuming location sending');
     _startSendTimer();
   }
 
   void notifySocketDisconnected() {
+    if (!_hasSocket) return;
     _socketConnected = false;
     _log('Socket disconnected, pausing location sends (GPS still running)');
     _sendTimer?.cancel();
@@ -172,7 +181,7 @@ class LocationService {
     _sendTimer = Timer.periodic(
       Duration(milliseconds: sendIntervalMs),
       (_) {
-        if (!_socketConnected) return;
+        if (_hasSocket && !_socketConnected) return;
 
         if (_newPositionArrived && _latestPosition != null) {
           final pos = _latestPosition!;
@@ -200,12 +209,14 @@ class LocationService {
             }
           }
 
-          gameSocketService.sendLocation(
-            x: imageOffset.dx,
-            y: imageOffset.dy,
-            zone: zone,
-            revealed: revealed,
-          );
+          if (_hasSocket && _socketConnected) {
+            gameSocketService!.sendLocation(
+              x: imageOffset.dx,
+              y: imageOffset.dy,
+              zone: zone,
+              revealed: revealed,
+            );
+          }
 
           onFrameRecorded?.call(imageOffset, zone, role);
 

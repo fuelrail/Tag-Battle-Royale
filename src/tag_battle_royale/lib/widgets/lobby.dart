@@ -18,6 +18,7 @@ class LobbyLayout extends StatefulWidget {
     this.banner,
     this.gameStarted = false,
     this.myRole = 'runner',
+    this.chatEnabled = true,
     this.showChannelSelector = true,
     required this.activeChannel,
     required this.onChannelChanged,
@@ -35,6 +36,7 @@ class LobbyLayout extends StatefulWidget {
   final Widget? banner;
   final bool gameStarted;
   final String myRole;
+  final bool chatEnabled;
   final bool showChannelSelector;
   final String activeChannel;
   final void Function(String channel) onChannelChanged;
@@ -145,6 +147,13 @@ class LobbyLayoutState extends State<LobbyLayout> {
   }
 
   Widget _buildChatTab() {
+    if (!widget.chatEnabled) {
+      return const Center(
+        child: Text('Chat not available in active game',
+            style: TextStyle(color: Colors.grey)),
+      );
+    }
+
     final visiblePlayers = widget.activeChannel == 'all'
       ? widget.players
       : widget.players.where((p) => p.role == widget.activeChannel).toList();

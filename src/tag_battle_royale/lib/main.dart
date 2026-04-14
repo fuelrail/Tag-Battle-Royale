@@ -7,6 +7,7 @@ import '/pages/offlinegamelobby.dart';
 import '/pages/onlinegamelobby.dart';
 import '/util/gamesession.dart';
 import '/util/permissions.dart';
+import '/util/offline_game_session.dart';
 import '/pages/map_editor.dart';
 import '/pages/replay_page.dart';
 import 'package:flutter/services.dart';
@@ -28,15 +29,19 @@ enum GameMode { online, offline }
 enum ConnectionRole { host, join }
 
 String generateRandomName() {
-  final generator = UniqueNamesGenerator(
-    config: Config(
-      dictionaries: [adjectives, animals],
-      separator: '',
-      style: Style.capital,
-      length: 2,
-    ),
-  );
-  return generator.generate();
+  String name;
+  do {
+    final generator = UniqueNamesGenerator(
+      config: Config(
+        dictionaries: [adjectives, animals],
+        separator: '',
+        style: Style.capital,
+        length: 2,
+      ),
+    );
+    name = generator.generate();
+  } while (name.length > 12);
+  return name;
 }
 
 
@@ -60,30 +65,6 @@ class MyApp extends StatelessWidget {
           surface: Colors.white,
           onSurface: Colors.black,
           outline: Color.fromARGB(255, 235, 127, 26),
-        ),
-        textTheme: const TextTheme(
-          titleLarge: TextStyle(
-            color: Color.fromARGB(255, 235, 127, 26),
-            fontWeight: FontWeight.w500,
-          ),
-          headlineMedium: TextStyle(
-            fontSize: 42,
-            fontWeight: FontWeight.w700,
-            color: Color.fromARGB(255, 235, 127, 26),
-            letterSpacing: 0.2,
-          ),
-          headlineSmall: TextStyle(
-            fontSize: 34,
-            fontWeight: FontWeight.w700,
-            color: Color.fromARGB(255, 235, 127, 26),
-            letterSpacing: 0.2,
-          ),
-          bodyMedium: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w400,
-            color: Color.fromARGB(255, 235, 127, 26),
-            letterSpacing: 0.1,
-          ),
         ),
         inputDecorationTheme: InputDecorationTheme(
           enabledBorder: OutlineInputBorder(
@@ -114,6 +95,7 @@ class ModeSelectionScreen extends StatefulWidget {
 
 class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
   GameSessionData? _savedSession;
+  OfflineGameSession? _savedOfflineSession;
   String? _reconnectError;
 
   @override
@@ -124,9 +106,11 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
 
   Future<void> _checkForSavedSession() async {
     final session = await GameSession.load();
+    final offlineSession = await OfflineGameSession.load();
     if (mounted) {
       setState(() {
         _savedSession = session;
+        _savedOfflineSession = offlineSession;
         _reconnectError = null;
       });
     }
@@ -177,11 +161,32 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
             gameCode: _savedSession!.gameId,
             playerId: _savedSession!.playerId,
             isHostOverride: _savedSession!.isHost,
+            resumeSession: _savedSession,
           ),
         ),
       // We create a saved session if they leave for if they'd like to reconnect again
       ).then((_) => _checkForSavedSession());
     }
+  }
+
+  Future<void> _resumeOffline(BuildContext ctx) async {
+    if (_savedOfflineSession == null) return;
+    if (!await checkLocationPermission(ctx)) return;
+    if (!ctx.mounted) return;
+
+    Navigator.push(
+      ctx,
+      MaterialPageRoute(
+        builder: (_) => OfflineConnectionScreen(
+          role: _savedOfflineSession!.isHost
+              ? ConnectionRole.host
+              : ConnectionRole.join,
+          nickName: _savedOfflineSession!.displayName,
+          lobbyName: '',
+          resumeSession: _savedOfflineSession,
+        ),
+      ),
+    ).then((_) => _checkForSavedSession());
   }
 
   // --- Build ---
@@ -242,8 +247,8 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
                   icon: const Icon(Icons.refresh),
                   label: Text('Reconnect to ${_savedSession!.gameId}'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    backgroundColor: Colors.teal,
+                    foregroundColor: Colors.white,
                   ),
                   onPressed: () => _reconnect(context),
                 ),
@@ -260,9 +265,24 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
               //    child: const Text('Dismiss'),
               //  ),
               //),
+              //const SizedBox(height: 16),
+            ],
+            if (_savedOfflineSession != null) ...[
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Resume Offline Game'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.teal,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () => _resumeOffline(context),
+                ),
+              ),
               const SizedBox(height: 16),
             ],
-
             SizedBox(
               width: double.infinity,
               height: 56,
@@ -473,6 +493,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
 
             TextField(
               controller: _nameCtrl,
+              maxLength: 12,
               decoration: InputDecoration(
                 labelStyle: Theme.of(context).textTheme.bodyMedium,
                   labelText: 'User Name',

@@ -45,8 +45,12 @@ class _HoldButtonState extends State<HoldButton>
         _triggered = true;
         widget.onComplete();
         // Reset so the button can be used again
-        _triggered = false;
-        _controller.reset();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _triggered = false;
+            _controller.reset();
+          }
+        });
       }
     });
   }

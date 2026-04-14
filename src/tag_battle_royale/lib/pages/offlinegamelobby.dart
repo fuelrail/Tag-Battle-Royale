@@ -1,18 +1,29 @@
 // ignore_for_file: avoid_print
 
+import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:confetti/confetti.dart';
 import 'package:nearby_connections/nearby_connections.dart';
 
 import '../util/player_data.dart';
 import '../util/map_file_handler.dart';
+import '../util/offline_game_session.dart';
+import '../util/replay/replay.dart';
+import '../util/player.dart';
+import '../util/replay/replay_file_handler.dart';
+import '../services/location_service.dart';
 import '../main.dart';
 import '../widgets/lobby.dart';
 import '../widgets/game_banner.dart';
+import '../widgets/hold_button.dart';
 import '../widgets/map_selector.dart';
+import '../widgets/game_display.dart';
 
 // --------------------------------------------------------------------------
 //  Commands for relaying
@@ -35,6 +46,9 @@ class Cmd {
   static const String _pseudoConfirm = 'CMD:PSEUDOHOST_CONFIRM:';
   static const String _pseudoFail = 'CMD:PSEUDOHOST_FAIL:';
   static const String _pendingDisconnect = 'CMD:PENDING_DISCONNECT:';
+  static const String _gameMap = 'CMD:GAME_MAP:';
+  static const String _mapConfirmed = 'CMD:MAP_CONFIRMED:';
+  static const String _gameStarted = 'CMD:GAME_STARTED:';
 
   // Build
   static String username(String userName, String displayName) =>
@@ -49,8 +63,8 @@ class Cmd {
   static String chat(String playerId, String playerName, String text) =>
       '$_chat$playerId:$playerName:$text';
   static String playerList(List<PlayerData> players) {
-    final entries = players.map((p) => '${p.id}:${p.name}:${p.role}:${p.isHost ? '1' : '0'}').join(',');
-    return '$_playerList$entries';
+      final entries = players.map((p) => '${p.id}:${p.name}:${p.role}:${p.isHost ? '1' : '0'}').join(',');
+      return '$_playerList$entries';
   }
   static String joinRequest(String advertiser, String joinerUser, String joinerDisplay) =>
       '$_joinRequest$advertiser:$joinerUser:$joinerDisplay';
@@ -68,6 +82,14 @@ class Cmd {
       '$_pseudoFail$userName';
   static String pendingDisconnect(String joinerUserName) =>
       '$_pendingDisconnect$joinerUserName';
+  static String gameMap(Map<String, dynamic> payload) {
+      final jsonStr = jsonEncode(payload);
+      return '$_gameMap${base64Encode(utf8.encode(jsonStr))}';
+  }
+  static String mapConfirmed(String userName) => 
+      '$_mapConfirmed$userName';
+  static String gameStarted(int startedAtMs) => 
+      '$_gameStarted$startedAtMs';
 
   // Check
   static bool isUsername(String m) => m.startsWith(_username);
@@ -85,6 +107,9 @@ class Cmd {
   static bool isPseudoConfirm(String m) => m.startsWith(_pseudoConfirm);
   static bool isPseudoFail(String m) => m.startsWith(_pseudoFail);
   static bool isPendingDisconnect(String m) => m.startsWith(_pendingDisconnect);
+  static bool isGameMap(String m) => m.startsWith(_gameMap);
+  static bool isMapConfirmed(String m) => m.startsWith(_mapConfirmed);
+  static bool isGameStarted(String m) => m.startsWith(_gameStarted);
 
   // Parse
   static (String userName, String displayName) parseUsername(String m) {
@@ -160,6 +185,14 @@ class Cmd {
 
   static String parsePendingDisconnect(String m) =>
       m.substring(_pendingDisconnect.length);
+
+  static Map<String, dynamic> parseGameMap(String m) {
+    final b64 = m.substring(_gameMap.length);
+    final jsonStr = utf8.decode(base64Decode(b64));
+    return jsonDecode(jsonStr) as Map<String, dynamic>;
+  }
+  static String parseMapConfirmed(String m) => m.substring(_mapConfirmed.length);
+  static int parseGameStarted(String m) => int.parse(m.substring(_gameStarted.length));
 }
 
 // --------------------------------------------------------------------------
@@ -180,10 +213,11 @@ class DiscoveredEndpoint {
 
 class OfflineConnectionScreen extends StatefulWidget {
   const OfflineConnectionScreen(
-      {super.key, required this.role, required this.nickName, required this.lobbyName});
+      {super.key, required this.role, required this.nickName, required this.lobbyName, this.resumeSession});
   final ConnectionRole role;
   final String nickName;
   final String lobbyName;
+  final OfflineGameSession? resumeSession;
 
   @override
   State<OfflineConnectionScreen> createState() =>
@@ -191,7 +225,7 @@ class OfflineConnectionScreen extends StatefulWidget {
 }
 
 class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
-  final String userName = 'User-${Random().nextInt(100000)}';
+  late final String userName;
   late final String displayName; // nickName if provided, otherwise userName
   final Strategy strategy = Strategy.P2P_CLUSTER;
   final int maxConnections = 1;
@@ -225,9 +259,46 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   bool _pendingAcceptance = false; // joiner waiting for host acceptance
   bool _inLobby = false; // joiner accepted into lobby
 
-  // Map
+  // Map & config
   MapFile? _selectedMap;
-  List<int>? _faceOrder; // ordered faceIDsr
+  MapFile? _receivedMap;
+  List<int>? _faceOrder; // ordered faceIDs
+  int _closureMinutes = 15;
+  int _gracePeriodSeconds = 90;
+  final TextEditingController _closureMinutesController =
+      TextEditingController(text: '15');
+  final TextEditingController _gracePeriodController =
+      TextEditingController(text: '90');
+
+  // Game start
+  bool _isStarting = false;
+  final Set<String> _mapConfirmations = {};
+
+  // Active game
+  bool _gameStarted = false;
+  bool _gameFinished = false;
+  DateTime? _gameStartedAt;
+  List<int> _activeFaceOrder = [];
+  int _activeClosureIntervalMs = 15 * 60 * 1000;
+  int _activeGracePeriodMs = 90 * 1000;
+
+  // Grace period
+  Timer? _graceTimer;
+  int _graceSecondsRemaining = 0;
+
+  // Location and replay
+  LocationService? _location;
+  Replay? _replay;
+  int _framesSinceLastSave = 0;
+  late ConfettiController _confettiController;
+  final GlobalKey<LobbyLayoutState> _lobbyKey = GlobalKey<LobbyLayoutState>();
+  final ScrollController _playersScrollController = ScrollController();
+
+  // Display
+  final ValueNotifier<int?> _displayCurrentZone = ValueNotifier(null);
+  final ValueNotifier<Set<int>> _displayClosedZones = ValueNotifier({});
+  final ValueNotifier<int?> _displayNextZone = ValueNotifier(null);
+  final Players _displayPlayers = Players();
 
   // Gets
   bool get isHost => widget.role == ConnectionRole.host;
@@ -240,6 +311,16 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     if (_isPseudoHost) return endpointMap.length - 1;
     return endpointMap.length;
   }
+  bool get _inGracePeriod {
+    if (_gameStartedAt == null || _activeGracePeriodMs <= 0) return false;
+    return DateTime.now().difference(_gameStartedAt!).inMilliseconds < _activeGracePeriodMs;
+  }
+  Set<int> get _closedZones {
+    if (_gameStartedAt == null || _activeFaceOrder.isEmpty) return {};
+    final elapsed = DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs;
+    if (elapsed <= 0) return {};
+    return _activeFaceOrder.take(elapsed ~/ _activeClosureIntervalMs).toSet();
+  }
 
   // --------------------------------------------------------------------------
   // Lifecycle
@@ -248,21 +329,91 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   @override
   void initState() {
     super.initState();
-    displayName = widget.nickName;
-    _lobbyName = widget.lobbyName;
-    if (isHost) {
-      _tree[userName] = [];
-      // Add self to player list
-      _players.add(PlayerData(
-        id: userName,
-        name: displayName,
-        role: 'chaser',
-        isHost: true,
-      ));
-      _inLobby = true;
-      _startAdvertising();
+    _confettiController = ConfettiController(duration: const Duration(seconds: 5));
+
+    if (widget.resumeSession != null) {
+      _initFromSession(widget.resumeSession!);
     } else {
-      _startDiscovery();
+      userName = 'User-${Random().nextInt(100000)}';
+      displayName = widget.nickName;
+      _lobbyName = widget.lobbyName;
+      if (isHost) {
+        _tree[userName] = [];
+        // Add self to player list
+        _players.add(PlayerData(
+          id: userName,
+          name: displayName,
+          role: 'chaser',
+          isHost: true,
+        ));
+        _inLobby = true;
+        _startAdvertising();
+      } else {
+        _startDiscovery();
+      }
+    }
+  }
+
+  void _initFromSession(OfflineGameSession session) {
+    userName = session.playerName;
+    displayName = session.displayName;
+    _lobbyName = '';
+    _inLobby = true;
+    _gameStarted = true;
+    _gameStartedAt = DateTime.fromMillisecondsSinceEpoch(session.gameStartedAt!);
+    _activeFaceOrder = List<int>.from(session.faceOrder);
+    _activeClosureIntervalMs = session.closureIntervalMs;
+    _activeGracePeriodMs = session.gracePeriodMs;
+
+    if (session.mapJson != null) {
+      _receivedMap = MapFile.fromJson(session.mapJson!);
+    }
+
+    // Restore replay
+    if (session.replayJson != null) {
+      try {
+        final restored = Replay.fromJson(session.replayJson!);
+        final oldPositions = restored.positions;
+        _replay = Replay(
+          playerID: userName,
+          playerName: displayName,
+          colour: session.role == 'chaser' ? Colors.red : Colors.black,
+          gameStartedAt: _gameStartedAt,
+        );
+        _replay!.positions.addAll(oldPositions);
+        _addLog('Restored replay with ${oldPositions.length} frames');
+      } catch (e) {
+        _addLog('Failed to restore replay: $e');
+      }
+    }
+
+    _players.clear();
+    for (final p in session.players) {
+      _players.add(PlayerData(
+        id: p['id'] ?? '',
+        name: p['name'] ?? '',
+        role: p['role'] ?? 'runner',
+        isHost: p['isHost'] == true,
+      ));
+    }
+
+    _displayPlayers.addPlayer(Player(
+      id: userName,
+      name: displayName,
+      colour: session.role == 'chaser' ? Colors.red : Colors.black,
+    ));
+
+    // Start location tracking
+    _location = LocationService(sendIntervalMs: 5000);
+    _location!.onLog = (msg) => _addLog(msg);
+    _location!.map = _receivedMap;
+    _location!.role = session.role;
+    _location!.getClosedZones = () => _closedZones;
+    _location!.onFrameRecorded = _onFrameRecorded;
+    _startGraceCountdown();
+
+    if (_receivedMap != null) {
+      _location!.startTracking();
     }
   }
   
@@ -272,6 +423,17 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     Nearby().stopAdvertising();
     Nearby().stopDiscovery();
     Nearby().stopAllEndpoints();
+    _graceTimer?.cancel();
+    _confettiController.dispose();
+    _location?.onLog = null;
+    _location?.onFrameRecorded = null;
+    _location?.dispose();
+    _displayCurrentZone.dispose();
+    _displayClosedZones.dispose();
+    _displayNextZone.dispose();
+    _playersScrollController.dispose();
+    _closureMinutesController.dispose();
+    _gracePeriodController.dispose();
     super.dispose();
   }
 
@@ -287,6 +449,342 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
           '${DateTime.now().toIso8601String().substring(11, 19)} $message');
       if (_log.length > 100) _log.removeLast();
     });
+  }
+
+  // --------------------------------------------------------------------------
+  //  Grace period
+  // --------------------------------------------------------------------------
+
+  void _startGraceCountdown() {
+    _graceTimer?.cancel();
+    _location?.inGracePeriod = _inGracePeriod;
+
+    if (!_inGracePeriod) {
+      _graceSecondsRemaining = 0;
+      return;
+    }
+
+    final elapsed = DateTime.now().difference(_gameStartedAt!).inMilliseconds;
+    _graceSecondsRemaining = ((_activeGracePeriodMs - elapsed) / 1000).ceil();
+
+    _graceTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) {
+        _graceTimer?.cancel();
+        return;
+      }
+      setState(() {
+        _graceSecondsRemaining--;
+        if (_graceSecondsRemaining <= 0) {
+          _graceSecondsRemaining = 0;
+          _graceTimer?.cancel();
+          _graceTimer = null;
+          _location?.inGracePeriod = false;
+        }
+      });
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  //  Replay persistence
+  // --------------------------------------------------------------------------
+
+  void _onFrameRecorded(ui.Offset position, int? zone, String role) {
+    _replay?.add(position, zone: zone, role: role);
+    _displayCurrentZone.value = zone;
+    _displayClosedZones.value = _closedZones;
+    _displayPlayers.updatePlayerPosition(userName, position);
+    final closedZoneLength = _closedZones.length;
+    _displayNextZone.value = closedZoneLength < _activeFaceOrder.length ? _activeFaceOrder[closedZoneLength + 1] : null;
+    _framesSinceLastSave++;
+    if (_framesSinceLastSave >= 3) {
+      _framesSinceLastSave = 0;
+      _persistReplay();
+    }
+  }
+
+  Future<void> _persistReplay() async {
+    if (_replay == null) return;
+    try {
+      await OfflineGameSession.updateReplay(_replay!.toJson());
+    } catch (e) {
+      print('Failed to persist replay: $e');
+    }
+  }
+
+  void _startReplay() {
+    final me = _players.where((p) => p.id == userName).firstOrNull;
+    if (me == null || _gameStartedAt == null) return;
+
+    _replay = Replay(
+      playerID: userName,
+      playerName: displayName,
+      colour: me.nameColour,
+      gameStartedAt: _gameStartedAt,
+    );
+
+    _location?.onFrameRecorded = _onFrameRecorded;
+    _addLog('Replay recording started');
+  }
+
+  // --------------------------------------------------------------------------
+  //  Session persistence
+  // --------------------------------------------------------------------------
+
+  Future<void> _saveSession() async {
+    await OfflineGameSession.save(OfflineGameSession(
+      playerName: userName,
+      displayName: displayName,
+      isHost: isHost,
+      role: _myRole,
+      gameStarted: _gameStarted,
+      gameStartedAt: _gameStartedAt?.millisecondsSinceEpoch,
+      faceOrder: _activeFaceOrder,
+      closureIntervalMs: _activeClosureIntervalMs,
+      gracePeriodMs: _activeGracePeriodMs,
+      mapJson: _receivedMap?.toJson(),
+      replayJson: _replay?.toJson(),
+      players: _players.map((p) => {
+        'id': p.id,
+        'name': p.name,
+        'role': p.role,
+        'isHost': p.isHost,
+      }).toList(),
+    ));
+  }
+
+  // --------------------------------------------------------------------------
+  //  Games
+  // --------------------------------------------------------------------------
+
+  void _hostStartGame() {
+    if (_selectedMap == null || _faceOrder == null) return;
+    if (!_players.any((p) => p.role == 'runner')) return;
+
+    setState(() => _isStarting = true);
+
+    // Reject all pending
+    for (final pending in List.from(_pendingGamePlayers)) {
+      _hostRejectPlayer(pending.userName);
+    }
+
+    _activeClosureIntervalMs = _closureMinutes * 60 * 1000;
+    _activeGracePeriodMs = _gracePeriodSeconds * 1000;
+    _activeFaceOrder = List<int>.from(_faceOrder!);
+    _receivedMap = _selectedMap;
+    _mapConfirmations.clear();
+    _mapConfirmations.add(userName); // host auto-confirms
+
+    // Send map to all players
+    final mapPayload = {
+      'map': _selectedMap!.toJson(),
+      'faceOrder': _activeFaceOrder,
+      'closureIntervalMs': _activeClosureIntervalMs,
+      'gracePeriodMs': _activeGracePeriodMs,
+    };
+    _flood(Cmd.gameMap(mapPayload));
+    _addLog('Map sent to ${_players.length - 1} players, waiting for confirmations...');
+
+    _checkMapConfirmations();
+  }
+
+  void _checkMapConfirmations() {
+    final accepted = _players.map((p) => p.id).toSet();
+    if (_mapConfirmations.containsAll(accepted)) {
+      _finishStarting();
+    }
+  }
+
+  void _finishStarting() {
+    final startedAt = DateTime.now().millisecondsSinceEpoch;
+    _gameStartedAt = DateTime.fromMillisecondsSinceEpoch(startedAt);
+
+    // Tell everyone
+    _flood(Cmd.gameStarted(startedAt));
+
+    _addLog('All confirmed. Starting game and disconnecting from mesh...');
+
+    setState(() {
+      _isStarting = false;
+      _gameStarted = true;
+    });
+
+    _beginActiveGame();
+
+    // Disconnect from nearby after a short delay to ensure the start message is sent
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _isDisconnectingAll = true;
+      Nearby().stopAdvertising();
+      Nearby().stopDiscovery();
+      Nearby().stopAllEndpoints();
+      _isDisconnectingAll = false;
+
+      setState(() {
+        _isAdvertising = false;
+        _isDiscovering = false;
+        endpointMap.clear();
+        connectedNames.clear();
+        discoveredEndpoints.clear();
+        _localPendingEndpoints.clear();
+      });
+    });
+  }
+
+  void _beginActiveGame() {
+    // Add self to display players
+    final me = _players.where((p) => p.id == userName).firstOrNull;
+    _displayPlayers.addPlayer(Player(
+      id: userName,
+      name: displayName,
+      colour: me?.nameColour ?? Colors.black,
+    ));
+
+    _location = LocationService(sendIntervalMs: 5000);
+    _location!.onLog = (msg) => _addLog(msg);
+    _location!.map = _receivedMap;
+    _location!.role = _myRole;
+    _location!.getClosedZones = () => _closedZones;
+
+    _startReplay();
+    _startGraceCountdown();
+
+    if (_receivedMap != null) {
+      _location!.startTracking();
+    }
+
+    _saveSession();
+    _addLog('Game started! Playing independently.');
+  }
+
+  // --------------------------------------------------------------------------
+  //  End game
+  // --------------------------------------------------------------------------
+
+  Future<void> _endGame() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('End game?'),
+        content: const Text('This will end the game.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('End Game')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    _location?.stopTracking();
+    await _persistReplay();
+
+    setState(() => _gameFinished = true);
+    _confettiController.play();
+    _addLog('Game ended');
+  }
+
+  Future<void> _assembleAndSaveReplay() async {
+    if (_receivedMap == null) {
+      _addLog('ERROR: No map data for replay assembly');
+      return;
+    }
+
+    final Map<int, double> zoneClosings = {};
+    for (int i = 0; i < _activeFaceOrder.length; i++) {
+      final closingTimeMs = _activeGracePeriodMs + ((i + 1) * _activeClosureIntervalMs);
+      zoneClosings[_activeFaceOrder[i]] = closingTimeMs / 1000.0;
+    }
+
+    final List<Replay> replays = [];
+    if (_replay != null) replays.add(_replay!);
+
+    _addLog('Assembling replay with ${replays.length} player(s)...');
+
+    try {
+      final replayFile = await ReplayFile.create(
+        map: _receivedMap!,
+        replays: replays,
+        zoneClosings: zoneClosings,
+      );
+      await replayFile.saveReplayFile();
+      _addLog('Replay saved: ${replayFile.replayName}');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Replay saved: ${replayFile.replayName}')),
+        );
+      }
+    } catch (e) {
+      _addLog('ERROR: Failed to save replay: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to save replay')),
+        );
+      }
+    }
+  }
+
+  Future<void> _leaveAndAssembleReplay() async {
+    await _assembleAndSaveReplay();
+    await OfflineGameSession.clear();
+    if (mounted) {
+      Navigator.popUntil(context, (route) => route.isFirst);
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  //  Caught button
+  // --------------------------------------------------------------------------
+
+  void _onCaught() {
+    final me = _players.where((p) => p.id == userName).firstOrNull;
+    if (me == null) return;
+
+    setState(() => me.role = 'chaser');
+    _location?.role = 'chaser';
+    OfflineGameSession.updateRole('chaser');
+    _addLog("I've been caught, now a chaser");
+  }
+
+  // --------------------------------------------------------------------------
+  //  Leave confirmation
+  // --------------------------------------------------------------------------
+
+  Future<bool> _confirmLeave() async {
+    final String title;
+    final String content;
+
+    if (_gameFinished) {
+      return true;
+    } else if (_gameStarted) {
+      title = 'Leave game?';
+      content = 'Your game progress will be saved. You can resume from the main menu.';
+    } else if (isHost) {
+      title = 'Disband game?';
+      content = 'Leaving will disband the game for all players.';
+    } else {
+      title = 'Leave game?';
+      content = 'Are you sure you want to leave?';
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Stay')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Leave')),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   // --------------------------------------------------------------------------
@@ -403,9 +901,17 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       _hostEnsureAdvertiser();
     } else if (Cmd.isPendingDisconnect(message) && isHost) {
       final joinerUser = Cmd.parsePendingDisconnect(message);
-      setState(() =>
-          _pendingGamePlayers.removeWhere((p) => p.userName == joinerUser));
+      setState(() => _pendingGamePlayers.removeWhere((p) => p.userName == joinerUser));
       _addLog('Pending player $joinerUser disconnected');
+    } else if (Cmd.isGameMap(message)) {
+      _handleGameMap(message, fromEndpointId);
+    } else if (Cmd.isMapConfirmed(message) && isHost) {
+      final confirmer = Cmd.parseMapConfirmed(message);
+      _mapConfirmations.add(confirmer);
+      _addLog('Map confirmed by $confirmer (${_mapConfirmations.length}/${_players.length})');
+      _checkMapConfirmations();
+    } else if (Cmd.isGameStarted(message)) {
+      _handleGameStarted(message, fromEndpointId);
     } else {
       _addLog('Unknown message: $message');
     }
@@ -474,7 +980,6 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
   void _handlePlayerList(String message, String? fromEndpointId) {
     final players = Cmd.parsePlayerList(message);
-    // Mark host
     setState(() {
       _players.clear();
       _players.addAll(players);
@@ -621,6 +1126,67 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     if (fromEndpointId != null) {
       _flood(message, excludeEndpointId: fromEndpointId);
     }
+  }
+
+  void _handleGameMap(String message, String? fromEndpointId) {
+    try {
+      final payload = Cmd.parseGameMap(message);
+      _receivedMap = MapFile.fromJson(payload['map']);
+      _activeFaceOrder = List<int>.from(payload['faceOrder']);
+      _activeClosureIntervalMs = payload['closureIntervalMs'];
+      _activeGracePeriodMs = payload['gracePeriodMs'];
+      _addLog('Map received and stored');
+
+      // Confirm to host
+      _sendToHost(Cmd.mapConfirmed(userName));
+
+      // Forward to rest of network
+      if (fromEndpointId != null) {
+        _flood(message, excludeEndpointId: fromEndpointId);
+      }
+    } catch (e) {
+      _addLog('ERROR: Failed to parse map: $e');
+    }
+  }
+
+  void _handleGameStarted(String message, String? fromEndpointId) {
+    final startedAtMs = Cmd.parseGameStarted(message);
+    _addLog('Game started signal received');
+
+    // Forward first
+    if (fromEndpointId != null) {
+      _flood(message, excludeEndpointId: fromEndpointId);
+    }
+
+    if (_receivedMap == null) {
+      _addLog('ERROR: No map data when game started');
+      return;
+    }
+
+    _gameStartedAt = DateTime.fromMillisecondsSinceEpoch(startedAtMs);
+    setState(() {
+      _gameStarted = true;
+      _isStarting = false;
+    });
+
+    // Disconnect from network after a short delay
+    Future.delayed(const Duration(milliseconds: 300), () {
+      _isDisconnectingAll = true;
+      Nearby().stopAdvertising();
+      Nearby().stopDiscovery();
+      Nearby().stopAllEndpoints();
+      _isDisconnectingAll = false;
+      setState(() {
+        _isAdvertising = false;
+        _isDiscovering = false;
+        endpointMap.clear();
+        connectedNames.clear();
+        discoveredEndpoints.clear();
+        _localPendingEndpoints.clear();
+      });
+    });
+
+    _beginActiveGame();
   }
 
   // --------------------------------------------------------------------------
@@ -1197,12 +1763,24 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
     // Pseudo-host: check if it was our parent that disconnected
     if (_isPseudoHost && id == _parentEndpointId) {
+      if (_gameStarted || _receivedMap != null) {
+        _addLog("Parent disconnected (game active, ignoring)");
+        setState(() {
+          endpointMap.clear();
+          connectedNames.clear();
+        });
+        return;
+      }
       _revertToJoiner();
       return;
     }
 
     // Host: direct child disconnected 
     if (isHost && !wasPending) {
+      if (_gameStarted || _receivedMap != null) {
+        _addLog("Child disconnected (game active, ignoring)");
+        return;
+      }
       _hostHandleOwnDisconnect(disconnectedName);
       return;
     }
@@ -1235,29 +1813,33 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
   Widget _buildGameTab(BuildContext context) {
     // Joiner: not yet connected or pending
-    if (!isHost && !_inLobby) {
+    if (!isHost && !_inLobby && !_gameStarted) {
       if (_pendingAcceptance) {
         return _buildPendingView();
       }
       return _buildDiscoveryView();
     }
 
+    if (_gameStarted) return _buildActiveGameTab(context);
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(children: [
-        _buildTopSection(context),
+        _buildLobbyTopSection(context),
         const SizedBox(height: 8),
         Expanded(
           child: DefaultTabController(
-            length: isHost ? 3 : 2,
+            length: isHost ? 4 : 3,
             child: Column(children: [
               TabBar(tabs: [
+                const Tab(text: 'Rules'),
                 const Tab(text: 'Players'),
-                if (isHost) const Tab(text: 'Topology'),
+                if (isHost) const Tab(text: 'Tree'),
                 const Tab(text: 'Logs'),
               ]),
               Expanded(
                 child: TabBarView(children: [
+                  _buildLobbyRulesSubTab(),
                   _buildPlayersSubTab(),
                   if (isHost) _buildTopologySubTab(),
                   _buildLogsSubTab(),
@@ -1268,6 +1850,51 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
         ),
       ]),
     );
+  }
+
+  Widget _buildActiveGameTab(BuildContext context) {
+    return Stack(children: [
+      Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(children: [
+          _buildActiveTopSection(context),
+          const SizedBox(height: 8),
+          Expanded(
+            child: DefaultTabController(
+              length: 3,
+              child: Column(children: [
+                const TabBar(tabs: [
+                  Tab(text: 'Rules'), 
+                  Tab(text: 'Players'),
+                  Tab(text: 'Logs'),
+                ]),
+                Expanded(
+                  child: TabBarView(children: [
+                    _buildRulesSubTab(), 
+                    _buildPlayersSubTab(),
+                    _buildLogsSubTab(),
+                  ]),
+                ),
+              ]),
+            ),
+          ),
+        ]),
+      ),
+      if (_gameFinished)
+        Align(
+          alignment: Alignment.topCenter,
+          child: ConfettiWidget(
+            confettiController: _confettiController,
+            blastDirectionality: BlastDirectionality.explosive,
+            shouldLoop: false,
+            numberOfParticles: 15,
+            maxBlastForce: 12,
+            minBlastForce: 3,
+            emissionFrequency: 0.03,
+            gravity: 0.2,
+          ),
+        ),
+    ]);
   }
 
   Widget _buildPendingView() {
@@ -1316,7 +1943,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     );
   }
 
-  Widget _buildTopSection(BuildContext context) {
+  Widget _buildLobbyTopSection(BuildContext context) {
     return Column(children: [
       if (_lobbyName.isNotEmpty) ...[
         Text('Lobby',
@@ -1341,7 +1968,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
           ),
           const SizedBox(width: 8),
           Icon(
-            _isAdvertising ? Icons.cell_tower : Icons.cell_tower,
+            Icons.cell_tower,
             size: 16,
             color: _isAdvertising
                 ? Theme.of(context).colorScheme.primary
@@ -1368,7 +1995,167 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
                     fontStyle: FontStyle.italic)),
           ),
       ],
+      if (isHost) ...[
+        const SizedBox(height: 16),
+        if (_selectedMap == null && !_isStarting)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text('Select a map in the Map tab to start',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ),
+        if (!_players.any((p) => p.role == 'runner') && !_isStarting)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text('At least one Runner is required to start',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ),
+        _isStarting
+            ? const Row(mainAxisSize: MainAxisSize.min, children: [
+                CircularProgressIndicator(strokeWidth: 2),
+                SizedBox(width: 12),
+                Text('Starting game...'),
+              ])
+            : SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Start Game'),
+                  onPressed: (_selectedMap == null ||
+                          _faceOrder == null ||
+                          !_players.any((p) => p.role == 'runner'))
+                      ? null
+                      : _hostStartGame,
+                )),
+      ],
     ]);
+  }
+
+  Widget _buildActiveTopSection(BuildContext context) {
+    if (_gameFinished) {
+      return Column(children: [
+        Text('Game Ended',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: Colors.amber.shade700, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: FilledButton.icon(
+            icon: const Icon(Icons.save),
+            label: const Text('Leave Game and Assemble Replay'),
+            onPressed: _leaveAndAssembleReplay,
+          ),
+        ),
+      ]);
+    }
+    return Column(children: [
+      Text('Game in progress',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: Colors.green, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 4),
+      Text('Role: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}',
+          style: Theme.of(context).textTheme.bodyMedium),
+      const SizedBox(height: 12),
+      HoldButton(
+        label: 'End Game (hold)',
+        onComplete: _endGame,
+        color: Theme.of(context).colorScheme.error,
+        backgroundColor: Theme.of(context).colorScheme.errorContainer,
+        textColor: Theme.of(context).colorScheme.onErrorContainer,
+      ),
+    ]);
+  }
+
+  Widget _buildLobbyRulesSubTab() {
+    if (!isHost) {
+      return const Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.lock_outline, size: 48, color: Colors.grey),
+          SizedBox(height: 12),
+          Text('Rules will be visible when the game starts',
+              style: TextStyle(color: Colors.grey)),
+        ]),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Zone Closure', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          Row(children: [
+            const Text('Close a zone every '),
+            SizedBox(
+              width: 60,
+              child: TextField(
+                controller: _closureMinutesController,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                onChanged: (v) {
+                  final m = int.tryParse(v);
+                  if (m != null && m > 0) _closureMinutes = m;
+                },
+                decoration: const InputDecoration(
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            const Text(' minutes'),
+          ]),
+          const SizedBox(height: 20),
+          Text('Grace Period', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          Row(children: [
+            const Text('Grace period: '),
+            SizedBox(
+              width: 60,
+              child: TextField(
+                controller: _gracePeriodController,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                onChanged: (v) {
+                  final s = int.tryParse(v);
+                  if (s != null && s >= 0) _gracePeriodSeconds = s;
+                },
+                decoration: const InputDecoration(
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            const Text(' seconds'),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRulesSubTab() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Zone Closure', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          Text('Close a zone every ${_activeClosureIntervalMs ~/ 60000} minutes'),
+          const SizedBox(height: 20),
+          Text('Grace Period', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          Text('Grace period: ${_activeGracePeriodMs ~/ 1000} seconds'),
+        ],
+      ),
+    );
   }
 
   Widget _buildPendingCard(OfflinePendingPlayer pending) {
@@ -1430,6 +2217,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     }
 
     return ListView.builder(
+      controller: _playersScrollController,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       itemCount: totalItems,
       itemBuilder: (context, i) {
@@ -1482,40 +2270,54 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              Text(
-                player.isHost
-                  ? 'Host'
-                  : player.role == 'chaser'
-                      ? 'Chaser'
-                      : 'Runner',
-                style: TextStyle(
-                    fontSize: 13,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
-              ),
-              if (isHost && player.id != userName) ...[
-                const SizedBox(width: 4),
-                TextButton(
-                  onPressed: () => _hostSwitchRole(player.id),
-                  style: TextButton.styleFrom(
-                    minimumSize: Size.zero,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: const Text('Switch',
-                      style: TextStyle(color: Colors.blue, fontSize: 13)),
-                ),
-                TextButton(
-                  onPressed: () => _hostKickPlayer(player.id),
-                  style: TextButton.styleFrom(
-                    minimumSize: Size.zero,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: const Text('Kick',
-                      style: TextStyle(color: Colors.red, fontSize: 13)),
-                ),
-              ] else
+              if (_gameStarted) ...[
+                if (player.isHost)
+                  Text('Host',
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant))
+                else if (player.role == 'chaser')
+                  Text('Chaser',
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant)),
                 const SizedBox(width: 16),
+              ] else ...[
+                Text(
+                  player.isHost
+                      ? 'Host'
+                      : player.role == 'chaser'
+                          ? 'Chaser'
+                          : 'Runner',
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+                if (isHost && player.id != userName) ...[
+                  const SizedBox(width: 4),
+                  TextButton(
+                    onPressed: () => _hostSwitchRole(player.id),
+                    style: TextButton.styleFrom(
+                      minimumSize: Size.zero,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text('Switch',
+                        style: TextStyle(color: Colors.blue, fontSize: 13)),
+                  ),
+                  TextButton(
+                    onPressed: () => _hostKickPlayer(player.id),
+                    style: TextButton.styleFrom(
+                      minimumSize: Size.zero,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text('Kick',
+                        style: TextStyle(color: Colors.red, fontSize: 13)),
+                  ),
+                ] else
+                  const SizedBox(width: 16),
+              ],
             ]),
           ),
         );
@@ -1586,6 +2388,40 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   }
 
   Widget _buildMapTab(BuildContext context) {
+    // During active game, show map viewer with caught button
+    if (_gameStarted && _receivedMap != null) {
+      final amRunner = _myRole == 'runner';
+      final showCaughtButton = amRunner && !_inGracePeriod && !_gameFinished;
+      return Stack(children: [
+        GameDisplay(
+          map: _receivedMap!,
+          currentZoneNotifier: _displayCurrentZone,
+          closedZonesNotifier: _displayClosedZones,
+          players: _displayPlayers,
+          next: _displayNextZone,
+        ),
+        if (amRunner && !_gameFinished)
+          Positioned(
+            left: 24,
+            right: 24,
+            bottom: 24,
+            child: SafeArea(
+              top: false,
+              child: HoldButton(
+                label: "I've been caught (hold)",
+                enabled: showCaughtButton,
+                onComplete: _onCaught,
+                color: Theme.of(context).colorScheme.error,
+                backgroundColor: Theme.of(context).colorScheme.errorContainer,
+                textColor: Theme.of(context).colorScheme.onErrorContainer,
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+              ),
+            ),
+          ),
+      ]);
+    }
+
+    // During lobby, show map selector
     return MapSelector(
       canCreateMaps: false,
       selectedMapName: _selectedMap?.mapName,
@@ -1606,52 +2442,107 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isConnected =
-        endpointMap.isNotEmpty || (isHost && _isAdvertising);
+    final bool isConnected = 
+      _gameStarted || endpointMap.isNotEmpty || (isHost && _isAdvertising);
 
-    return LobbyLayout(
-      title: _inLobby
-        ? Text.rich(TextSpan(children: [
-            TextSpan(text: '$displayName: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}'),
-            if (isHost)
-              TextSpan(
-                text: ' (host)',
+    Widget? banner;
+    if (_gameFinished) {
+      banner = Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+        color: Colors.amber.shade700,
+        child: const Column(
+          children: [
+            Text('Game Ended',
                 style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-          ]))
-        : Text(_lobbyName.isNotEmpty
-                  ? 'Offline: $_lobbyName'
-                  : 'Offline: Joining'),
-      isConnected: isConnected,
-      players: _players,
-      chatMessages: _chatMessages,
-      currentPlayerId: userName,
-      playerColourMap: _playerColourMap,
-      onSendChat: _sendChatMessage,
-      gameTabBuilder: _buildGameTab,
-      mapTabBuilder: isHost ? _buildMapTab : null,
-      banner: (isHost && _pendingGamePlayers.isNotEmpty)
-        ? GameBanner(
-            gameStarted: false,
-            gameFinished: false,
-            isHost: true,
-            replaySubmitted: false,
-            receivedReplaysCount: 0,
-            totalPlayersCount: 0,
-            inGracePeriod: false,
-            graceSecondsRemaining: 0,
-            myRole: _myRole,
-            pendingPlayersCount: _pendingGamePlayers.length,
-          )
-        : null,
-      gameStarted: false,
-      myRole: _myRole,
-      showChannelSelector: false,
-      activeChannel: _activeChannel,
-      onChannelChanged: (_) {},
+                    color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            SizedBox(height: 2),
+            Text('Replay ready to save.',
+                style: TextStyle(color: Colors.white, fontSize: 14)),
+          ],
+        ),
+      );
+    } else if (_gameStarted && _inGracePeriod && _graceSecondsRemaining > 0) {
+      banner = GameBanner(
+        gameStarted: true,
+        gameFinished: false,
+        isHost: false,
+        replaySubmitted: false,
+        receivedReplaysCount: 0,
+        totalPlayersCount: 0,
+        inGracePeriod: true,
+        graceSecondsRemaining: _graceSecondsRemaining,
+        myRole: _myRole,
+        pendingPlayersCount: 0,
+      );
+    } else if (!_gameStarted && isHost && _pendingGamePlayers.isNotEmpty) {
+      banner = GameBanner(
+        gameStarted: false,
+        gameFinished: false,
+        isHost: true,
+        replaySubmitted: false,
+        receivedReplaysCount: 0,
+        totalPlayersCount: 0,
+        inGracePeriod: false,
+        graceSecondsRemaining: 0,
+        myRole: _myRole,
+        pendingPlayersCount: _pendingGamePlayers.length,
+      );
+    }
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldLeave = await _confirmLeave();
+        if (shouldLeave && context.mounted) {
+          if (_gameFinished || !_gameStarted) {
+            await OfflineGameSession.clear();
+          }
+          if (context.mounted) {
+            Navigator.popUntil(context, (route) => route.isFirst);
+          }
+        }
+      },
+      child: LobbyLayout(
+        key: _lobbyKey,
+        title: _gameFinished
+            ? const Text('Game Ended')
+            : _gameStarted
+                ? Text.rich(TextSpan(children: [
+                    TextSpan(text: '$displayName: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}'),
+                  ]))
+                : _inLobby
+                    ? Text.rich(TextSpan(children: [
+                        TextSpan(text: '$displayName: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}'),
+                        if (isHost)
+                          TextSpan(
+                            text: ' (host)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ]))
+                    : Text(_lobbyName.isNotEmpty
+                              ? 'Offline: $_lobbyName'
+                              : 'Offline: Joining'),
+        isConnected: isConnected,
+        players: _players,
+        chatMessages: _chatMessages,
+        currentPlayerId: userName,
+        playerColourMap: _playerColourMap,
+        onSendChat: _sendChatMessage,
+        gameTabBuilder: _buildGameTab,
+        mapTabBuilder: (isHost || _gameStarted) ? _buildMapTab : null,
+        banner: banner,
+        gameStarted: _gameStarted,
+        myRole: _myRole,
+        chatEnabled: !_gameStarted,
+        showChannelSelector: false,
+        activeChannel: _activeChannel,
+        onChannelChanged: (_) {},
+      ),
     );
   }
 }
