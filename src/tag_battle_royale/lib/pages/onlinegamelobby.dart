@@ -68,6 +68,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   final Players _displayPlayers = Players();
   final ValueNotifier<int?> _displayCurrentZone = ValueNotifier(null);
   final ValueNotifier<Set<int>> _displayClosedZones = ValueNotifier({});
+  final ValueNotifier<int?> _displayNextZone = ValueNotifier(null);
 
   // Chat
   final Map<String, List<ChatMessage>> _chatMessages = {
@@ -129,8 +130,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     if (elapsed <= 0) return {};
 
     final zones = _activeFaceOrder.take(elapsed ~/ _activeClosureIntervalMs).toSet();
-    if(_displayClosedZones.value.length!= zones.length){_displayClosedZones.value = zones;}
-    print(zones);
+    if(_displayClosedZones.value.length!= zones.length){
+      _displayClosedZones.value = zones;
+      if(zones.length != _activeFaceOrder.length){
+        _displayNextZone.value = _activeFaceOrder[zones.length + 1];
+      }else{_displayNextZone.value = null;}
+    }
     return zones;
   }
 
@@ -236,6 +241,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     }
   }
 
+  void _updatePlayerColour(String playerID, Color colour){
+    final player = _displayPlayers.getById(playerID);
+    player?.updateColour(colour);
+  }
+
   void _updatePlayerPosition(Offset? pos){;
     if(_socket!.currentPlayerId == null){return;}
     _displayPlayers.updatePlayerPosition(_socket!.currentPlayerId!, pos);
@@ -266,6 +276,20 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     };
 
     _addLog('Replay recording started');
+  }
+
+  void _saveMap() async {
+    _addLog("trying to save map");
+    if(_receivedMap == null){return;}
+    final alreadyHaveMap = await getMapByID(_receivedMap!.id) != null;
+    if(!alreadyHaveMap){
+      try{
+        _receivedMap!.saveMapFile();
+        _addLog("Map saved ${_receivedMap!.mapName}");
+      } catch (e){
+        _addLog("Couldn't save map -> $e");
+      }
+    } else{_addLog("Map already saved Locally");}
   }
 
   void _submitReplay() {
@@ -301,6 +325,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       _addLog('ERROR: No map data for replay assembly');
       return;
     }
+    _addLog("Saving map ...");
+    _saveMap();
 
     // Compute zone closings from game config
     final Map<int, double> zoneClosings = {};
@@ -326,6 +352,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _addLog('Assembling replay with ${replays.length} player(s)...');
 
     try {
+      await _receivedMap!.saveMapFile();
+      _addLog('Map saved: ${_receivedMap!.mapName}');
       final replayFile = await ReplayFile.create(
         map: _receivedMap!,
         replays: replays,
@@ -616,6 +644,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       try {
         _receivedMap = MapFile.fromJson(data['map'] as Map<String, dynamic>);
         _activeFaceOrder = List<int>.from(data['faceOrder']);
+        _displayNextZone.value = _activeFaceOrder[0];
         _activeClosureIntervalMs = data['closureIntervalMs'];
         _activeGracePeriodMs = data['gracePeriodMs'];
 
@@ -689,7 +718,9 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       if (playerId == null || role == null) return;
       setState(() {
         final player = _findPlayer(playerId);
-        if (player != null) player.role = role;
+        if (player == null){return;}
+        player.role = role;
+        _updatePlayerColour(playerId, player.nameColour);
       });
       _addLog('${_findPlayer(playerId)?.name ?? playerId} is now $role');
 
@@ -1306,6 +1337,47 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     );
   }
 
+  void _selectNextZone(ui.Offset point) async {
+    print("hello");
+    if(_inGracePeriod || !_gameStarted || _gameFinished){return;}
+    if(_receivedMap == null){return;}
+    final graph = _receivedMap!.graph;
+
+    final face = graph.pointInFace(point);
+    if(face == null) return;
+
+    final bool? shouldBeNext = await showDialog<bool>(
+      context: context,
+      builder: (context){
+        return AlertDialog(
+          title: const Text("Next Zone!"),
+          content: Text("Are you sure you want this zone to close next?"),
+          actions: [
+            TextButton(
+              onPressed: (){
+                Navigator.pop(context, true);
+              },
+              child: const Text("yes"),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("Cancel"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if(shouldBeNext == null || shouldBeNext == false){return;}
+    final newZoneOrder = [..._closedZones, face.faceID, ..._activeFaceOrder.where((f) => f != face.faceID && !_closedZones.contains(f))];
+    _displayNextZone.value = face.faceID;
+    print("oldzones $_activeFaceOrder");
+    print("new zones $newZoneOrder");
+
+    // assign locally and send around ??
+    
+  }
+
   Widget _buildPendingPlayerCard(PendingPlayer pending) {
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -1581,9 +1653,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
               HoldButton(
                 label: 'Manual End Game (hold)',
                 onComplete: _hostEndGame,
-                color: Theme.of(context).colorScheme.error,
-                backgroundColor: Theme.of(context).colorScheme.errorContainer,
-                textColor: Theme.of(context).colorScheme.onErrorContainer,
+                color: Theme.of(context).colorScheme.onPrimary,
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                textColor: Theme.of(context).colorScheme.onPrimary,
+                holdDuration: Duration(seconds: 2),
               ),
             ],
           ],
@@ -1721,6 +1794,8 @@ Widget _buildLobbyTopSection(BuildContext context) {
             closedZonesNotifier: _displayClosedZones,
             currentZoneNotifier: _displayCurrentZone,
             players: _displayPlayers,
+            next: _displayNextZone,
+            onTapScene: _selectNextZone,
           ),
           if (amRunner)
             Positioned(
@@ -1736,9 +1811,10 @@ Widget _buildLobbyTopSection(BuildContext context) {
                     final myId = _socket?.currentPlayerId;
                     if (myId != null) _switchRole(myId);
                   },
-                  color: Theme.of(context).colorScheme.error,
-                  backgroundColor: Theme.of(context).colorScheme.errorContainer,
-                  textColor: Theme.of(context).colorScheme.onErrorContainer,
+                  color: Theme.of(context).colorScheme.onPrimary,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  textColor: Theme.of(context).colorScheme.onPrimary,
+                  holdDuration: Duration(seconds: 2),
                   padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
                 ),
               ),

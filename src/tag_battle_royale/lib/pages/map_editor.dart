@@ -81,18 +81,18 @@ class _MapEditorState extends State<MapEditor> {
                         if(!context.mounted) return;
                         Navigator.push(
                           context,
-                        //   MaterialPageRoute(
-                        //     builder: (_) =>ExampleGame(
-                        //       map: map,
-                        //     ),
-                        //   ),
-                        // );
                           MaterialPageRoute(
-                            builder: (_) => MapViewer(
+                            builder: (_) =>ExampleGame(
                               map: map,
                             ),
                           ),
                         );
+                        //   MaterialPageRoute(
+                        //     builder: (_) => MapViewer(
+                        //       map: map,
+                        //     ),
+                        //   ),
+                        // );
                       },
                       trailing: IconButton(
                         icon: Icon(
@@ -104,7 +104,7 @@ class _MapEditorState extends State<MapEditor> {
                             context: context,
                             builder: (_) => AlertDialog(
                               title: const Text("Delete Map"),
-                              content: const Text("Are you sure you want to delete this map?"),
+                              content: const Text("Are you sure you want to delete this map?\nAny replaying for this map will also be deleted."),
                               actions: [
                                 TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
                                 TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Delete")),

@@ -215,6 +215,7 @@ class _ExampleGameState extends State<ExampleGame> {
         closedZonesNotifier: _closedFacesNotifier,
         players: widget.players,
         showPlayerNames: false,
+        next: _currentZoneNotifier,
       ),
     );
   }

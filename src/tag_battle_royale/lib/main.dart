@@ -9,9 +9,20 @@ import '/util/gamesession.dart';
 import '/util/permissions.dart';
 import '/pages/map_editor.dart';
 import '/pages/replay_page.dart';
+import 'package:flutter/services.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
-void main() => runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+  ]);
+
+  await WakelockPlus.enable();
+
+  runApp(const MyApp());
+}
 
 enum GameMode { online, offline }
 enum ConnectionRole { host, join }

@@ -15,6 +15,7 @@ class MapPainter extends CustomPainter {
   final MapFile? map;
   final PlanarGraph? graph;
   final List<Stroke>? strokes;
+  final ValueNotifier<int?>? next;
 
   final bool drawMode;
   final bool drawLabel;
@@ -26,7 +27,8 @@ class MapPainter extends CustomPainter {
     this.strokes,
     this.drawMode = false,
     this.drawLabel = true,
-  });
+    this.next,
+  }) : super(repaint: next);
 
   @override
   void paint(Canvas canvas, Size size){
@@ -35,6 +37,7 @@ class MapPainter extends CustomPainter {
     FacePainter(
       faces: faces,
       drawLabel: drawLabel,
+      next: next?.value,
     ).paint(canvas, size);
 
     if(drawMode){
@@ -47,5 +50,5 @@ class MapPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant MapPainter oldDelegate) => true;
+  bool shouldRepaint(covariant MapPainter oldDelegate) => false;
 }

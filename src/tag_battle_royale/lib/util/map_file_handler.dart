@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import "faceDetection/face_detection_graph.dart";
+import "replay/replay_file_handler.dart";
 
 // For saving and laoding Map Files
 
@@ -191,6 +192,13 @@ class MapFile {
     final file = File('${dir.path}/$fileName');
 
     if(await file.exists()){
+      final replays = await getReplayFiles();
+      for(final replay in replays){
+        if(replay.mapId == id){
+          replay.delete();
+        }
+      }
+
       await file.delete();
     }
   }

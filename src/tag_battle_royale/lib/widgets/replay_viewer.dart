@@ -51,11 +51,6 @@ class _ReplayViewerState extends State<ReplayViewer> {
         }
       }
     }
-    for(final closingTime in widget.replayFile.zoneClosings.values){
-      if(closingTime > maxTime){
-        maxTime = closingTime;
-      }
-    }
     return maxTime;
   }
 

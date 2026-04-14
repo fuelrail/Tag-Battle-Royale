@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 
 import '../util/map_file_handler.dart';
-import '../util/faceDetection/face_detection_graph.dart';
 import '../util/mapPainter/map_painter.dart';
 import '../util/mapPainter/current_zone_painter.dart';
 import '../util/mapPainter/closed_zone_painter.dart';
@@ -20,15 +19,17 @@ class GameDisplay extends StatefulWidget {
     required this.closedZonesNotifier,
     required this.players,
     this.showPlayerNames = false,
+    required this.next,
+    this.onTapScene,
   });
 
   final MapFile map;
 
   final ValueNotifier<int?> currentZoneNotifier;
   final ValueNotifier<Set<int>> closedZonesNotifier;
-
+  final ValueNotifier<int?> next;
   final Players players;
-
+  final Function(ui.Offset)? onTapScene;
   final bool showPlayerNames;
 
   @override
@@ -65,6 +66,7 @@ class _GameDisplayState extends State<GameDisplay> {
 
     return SizedBox.expand(
       child: MapTransform(
+        onTapScene: widget.onTapScene,
         image: image!,
         child: Stack(
           fit: StackFit.expand,
@@ -77,6 +79,7 @@ class _GameDisplayState extends State<GameDisplay> {
                   map: widget.map,
                   drawMode: false,
                   drawLabel: true,
+                  next: widget.next,
                 ),
               ),
             ),

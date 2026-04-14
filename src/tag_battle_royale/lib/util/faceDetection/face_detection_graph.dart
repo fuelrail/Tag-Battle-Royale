@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 import 'dart:math' as math;
 
-import '../mapPainter/label_position.dart';
+import 'label_position.dart';
 
 import 'face_detection_point.dart';
 import 'face_detection_segment.dart';

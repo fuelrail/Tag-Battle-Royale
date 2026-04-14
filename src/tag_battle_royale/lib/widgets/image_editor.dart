@@ -435,7 +435,6 @@ class ImageEditorState extends State<ImageEditor> {
   @override
   Widget build(BuildContext context){
     final imageSize = Size(widget.image.width.toDouble(), widget.image.height.toDouble());
-    final displayStrokes = [...strokes, ? _previewStroke];
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -548,7 +547,7 @@ class ImageEditorState extends State<ImageEditor> {
               ),
             ),
 
-            if (!drawMode)
+            if(!drawMode)
               RepaintBoundary(
                 child: CustomPaint(
                   size: imageSize,
@@ -558,11 +557,11 @@ class ImageEditorState extends State<ImageEditor> {
                 ),
               ),
 
-            if (drawMode)
+            if(drawMode)
               RepaintBoundary(
                 child: ValueListenableBuilder<int>(
                   valueListenable: _canvasTick,
-                  builder: (_, __, ___) {
+                  builder: (_, _, _){
                     return CustomPaint(
                       size: imageSize,
                       painter: StrokePainter([

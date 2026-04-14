@@ -5,10 +5,12 @@ import "../faceDetection/face_detection_graph.dart";
 class FacePainter extends CustomPainter{
   final List<Face> faces;
   final bool drawLabel;
+  final int? next;
 
   FacePainter({
     required this.faces,
     this.drawLabel = false,
+    this.next,
   });
 
   @override
@@ -32,7 +34,7 @@ class FacePainter extends CustomPainter{
         textAlign: TextAlign.center,
         textDirection: TextDirection.ltr,
       );
-      final text = face.name;
+      final text = next == face.faceID ? face.name + ("\nnext"): face.name;
 
       // outline first
       textPainter.text = TextSpan(

@@ -157,7 +157,7 @@ class LobbyLayoutState extends State<LobbyLayout> {
 
         // Player chips
         SizedBox(
-          height: 64,
+          height: 68,
           child: visiblePlayers.isEmpty
               ? const Center(
                   child: Text('No players yet', style: TextStyle(color: Colors.grey)))

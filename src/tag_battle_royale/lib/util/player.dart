@@ -11,8 +11,12 @@ class Player {
 
   final String id;
   final String name;
-  final Color colour;
+  Color colour;
   ui.Offset? position;
+
+  void updateColour(Color colour){
+    this.colour = colour;
+  }
 }
 
 class Players extends ChangeNotifier {

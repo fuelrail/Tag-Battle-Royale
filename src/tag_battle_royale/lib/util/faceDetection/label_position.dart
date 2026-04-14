@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-import "../faceDetection/face_detection_point.dart";
+import "face_detection_point.dart";
 
 // Determines where to put the label for a face by find the farthest point from any edge
 ui.Offset findPoleOfInaccessibility(List<ui.Offset> polygon, PointBuilder pointBuilder){
