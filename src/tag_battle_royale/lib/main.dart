@@ -150,6 +150,7 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
             gameCode: _savedSession!.gameId,
             playerId: _savedSession!.playerId,
             isHostOverride: _savedSession!.isHost,
+            resumeSession: _savedSession,
           ),
         ),
       // We create a saved session if they leave for if they'd like to reconnect again
