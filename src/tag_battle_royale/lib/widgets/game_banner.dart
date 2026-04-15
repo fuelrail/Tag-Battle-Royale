@@ -14,14 +14,11 @@ class GameBanner extends StatelessWidget {
     required this.graceSecondsRemaining,
     required this.myRole,
     required this.pendingPlayersCount,
-<<<<<<< HEAD
     required this.currentTime,
     required this.zoneClosePeriod,
     this.inBadZone = false,
-=======
     this.replayFileAssembled = false,
     this.replayFileSentToServer = false,
->>>>>>> f2884383bbbef5427ca3f66e920aebc3e475f18d
   });
 
   final bool gameStarted;
@@ -35,15 +32,12 @@ class GameBanner extends StatelessWidget {
   final int graceSecondsRemaining;
   final String myRole;
   final int pendingPlayersCount;
-<<<<<<< HEAD
   final bool inBadZone;
   final int zoneClosePeriod;
   final int? currentTime;
 
-=======
   final bool replayFileAssembled;
   final bool replayFileSentToServer;
->>>>>>> f2884383bbbef5427ca3f66e920aebc3e475f18d
 
   @override
   Widget build(BuildContext context) {
