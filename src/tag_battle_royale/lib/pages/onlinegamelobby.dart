@@ -110,7 +110,6 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   bool _replaySubmitted = false;
   Timer? _replayRetryTimer;
   final Map<String, Map<String, dynamic>> _receivedReplays = {}; // { playerId: replayJson }
-  int _framesSinceLastSave = 0;
   bool _replayFileAssembled = false;
   bool _replayFileSentToServer = false;
   Map<String, dynamic>? _assembledReplayJson;
@@ -260,11 +259,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     // Set up frame recording with persistence
     _location?.onFrameRecorded = (position, zone, role) {
       _replay?.add(position, zone: zone, role: role);
-      _framesSinceLastSave++;
-      if (_framesSinceLastSave >= 3) {
-        _framesSinceLastSave = 0;
-        _persistReplay();
-      }
+      _persistReplay();
     };
 
     _startGraceCountdown();
@@ -1254,8 +1249,26 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       );
     }
 
-    final enabled = isHost && !_gameStarted;
+    // Active game, show rules as plain text
+    if (_gameStarted) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Zone Closure', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            Text('Close a zone every: ${_activeClosureIntervalMs ~/ 60000} minutes'),
+            const SizedBox(height: 20),
+            Text('Grace Period', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            Text('Grace period of: ${_activeGracePeriodMs ~/ 1000} seconds'),
+          ],
+        ),
+      );
+    }
 
+    // Lobby, editable fields for host
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -1272,7 +1285,6 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                   controller: _closureMinutesController,
                   keyboardType: TextInputType.number,
                   textAlign: TextAlign.center,
-                  enabled: enabled,
                   onChanged: (v) {
                     final m = int.tryParse(v);
                     if (m != null && m > 0) _closureMinutes = m;
@@ -1299,7 +1311,6 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                   controller: _gracePeriodController,
                   keyboardType: TextInputType.number,
                   textAlign: TextAlign.center,
-                  enabled: enabled,
                   onChanged: (v) {
                     final s = int.tryParse(v);
                     if (s != null && s >= 0) _gracePeriodSeconds = s;
