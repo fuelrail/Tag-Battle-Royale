@@ -617,6 +617,48 @@ function registerGameHandlers(io, socket, gameManager) {
     _checkGameOver(io, game);
   });
 
+  socket.on("game:reorderzones", (data, callback) => {
+    const playerInfo = gameManager.getPlayerBySocketId(socket.id);
+    if (!playerInfo) {
+      return emitError(socket, callback, "game:reorderzones", "Not in a game");
+    }
+
+    const game = gameManager.getGame(playerInfo.gameId);
+    if (!game) {
+      return emitError(socket, callback, "game:reorderzones", "Game not found");
+    }
+
+    if (playerInfo.id !== game.hostId) {
+      return emitError(socket, callback, "game:reorderzones", "Only the host can reorder zones");
+    }
+
+    if (game.status !== "active") {
+      return emitError(socket, callback, "game:reorderzones", "Game is not active");
+    }
+
+    const newFaceOrder = data?.faceOrder;
+    if (!Array.isArray(newFaceOrder) || newFaceOrder.length === 0) {
+      return emitError(socket, callback, "game:reorderzones", "Face order is required");
+    }
+
+    // Validate same zones, just reordered
+    const oldSorted = [...game.faceOrder].sort();
+    const newSorted = [...newFaceOrder].sort();
+    if (JSON.stringify(oldSorted) !== JSON.stringify(newSorted)) {
+      return emitError(socket, callback, "game:reorderzones", "New face order must contain the same zones");
+    }
+
+    console.log(`[game:reorderzones] Host reordered zones in game ${game.id}: ${JSON.stringify(newFaceOrder)}`);
+    game.faceOrder = newFaceOrder;
+
+    if (callback) callback({ ok: true });
+
+    // Broadcast to all players including host
+    io.to(game.id).emit("game:zonesreordered", {
+      faceOrder: newFaceOrder,
+    });
+  });
+
   socket.on("game:end", (_, callback) => {
     const playerInfo = gameManager.getPlayerBySocketId(socket.id);
     if (!playerInfo) {

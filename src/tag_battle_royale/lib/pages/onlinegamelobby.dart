@@ -135,7 +135,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     if(_displayClosedZones.value.length!= zones.length){
       _displayClosedZones.value = zones;
       if(zones.length != _activeFaceOrder.length){
-        _displayNextZone.value = _activeFaceOrder[zones.length + 1];
+        _displayNextZone.value = _activeFaceOrder[zones.length];
       }else{_displayNextZone.value = null;}
     }
     return zones;
@@ -843,6 +843,23 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       });
     };
 
+    _socket!.onZonesReordered = (data) {
+      if (!mounted) return;
+      final newOrder = List<int>.from(data['faceOrder']);
+      setState(() => _activeFaceOrder = newOrder);
+
+      // Update the next zone display
+      final closedCount = _closedZones.length;
+      if (closedCount < _activeFaceOrder.length) {
+        _displayNextZone.value = _activeFaceOrder[closedCount];
+      } else {
+        _displayNextZone.value = null;
+      }
+
+      _addLog('Zone order updated: ${_activeFaceOrder.toString()}');
+      if (_gameStarted) _saveFullSession();
+    };
+
     _socket!.onPlayerRoleUpdated = (data) {
       if (!mounted) return;
       final playerId = data['playerId']?.toString();
@@ -931,6 +948,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _socket?.onPlayerRoleUpdated = null;
     _socket?.onReplayReceived = null;
     _socket?.onGameDisbanded = null;
+    _socket?.onZonesReordered = null;
     _socket?.onError = null;
   }
 
@@ -1476,43 +1494,50 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
   void _selectNextZone(ui.Offset point) async {
     print("hello");
-    if(_inGracePeriod || !_gameStarted || _gameFinished){return;}
-    if(_receivedMap == null){return;}
-    final graph = _receivedMap!.graph;
+    if (_inGracePeriod || !_gameStarted || _gameFinished) return;
+    if (_receivedMap == null) return;
+    if (!isHost) return;
 
+    final graph = _receivedMap!.graph;
     final face = graph.pointInFace(point);
-    if(face == null) return;
+    if (face == null) return;
+
+    // Don't allow selecting an already closed zone
+    if (_closedZones.contains(face.faceID)) return;
 
     final bool? shouldBeNext = await showDialog<bool>(
       context: context,
-      builder: (context){
+      builder: (context) {
         return AlertDialog(
-          title: const Text("Next Zone!"),
-          content: Text("Are you sure you want this zone to close next?"),
+          title: const Text("Next Zone"),
+          content: const Text("This zone will close next?"),
           actions: [
-            TextButton(
-              onPressed: (){
-                Navigator.pop(context, true);
-              },
-              child: const Text("yes"),
-            ),
             TextButton(
               onPressed: () => Navigator.pop(context, false),
               child: const Text("Cancel"),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("Yes"),
             ),
           ],
         );
       },
     );
+    if (shouldBeNext != true) return;
 
-    if(shouldBeNext == null || shouldBeNext == false){return;}
-    final newZoneOrder = [..._closedZones, face.faceID, ..._activeFaceOrder.where((f) => f != face.faceID && !_closedZones.contains(f))];
-    _displayNextZone.value = face.faceID;
+    // Build new order, keep closed zones in place, insert selected next, then the rest
+    final closedCount = _closedZones.length;
+    final closedPart = _activeFaceOrder.take(closedCount).toList();
+    final remainingOpen = _activeFaceOrder.skip(closedCount).where((f) => f != face.faceID).toList();
+    final newZoneOrder = [...closedPart, face.faceID, ...remainingOpen];
+
+    _addLog('Reordering zones: next to close = zone ${face.faceID}');
+
+    _socket?.reorderZones(newZoneOrder);
+
     print("oldzones $_activeFaceOrder");
     print("new zones $newZoneOrder");
-
-    // assign locally and send around ??
-    
   }
 
   Widget _buildPendingPlayerCard(PendingPlayer pending) {
