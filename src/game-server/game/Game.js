@@ -39,6 +39,7 @@ class Game {
 
     // Replay storage: { playerId: replayJson }
     this.replays = new Map();
+    this.assembledReplay = null;
   }
 
   // --- Players ---

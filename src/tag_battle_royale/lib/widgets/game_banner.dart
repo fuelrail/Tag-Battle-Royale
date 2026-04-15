@@ -14,9 +14,14 @@ class GameBanner extends StatelessWidget {
     required this.graceSecondsRemaining,
     required this.myRole,
     required this.pendingPlayersCount,
+<<<<<<< HEAD
     required this.currentTime,
     required this.zoneClosePeriod,
     this.inBadZone = false,
+=======
+    this.replayFileAssembled = false,
+    this.replayFileSentToServer = false,
+>>>>>>> f2884383bbbef5427ca3f66e920aebc3e475f18d
   });
 
   final bool gameStarted;
@@ -30,10 +35,15 @@ class GameBanner extends StatelessWidget {
   final int graceSecondsRemaining;
   final String myRole;
   final int pendingPlayersCount;
+<<<<<<< HEAD
   final bool inBadZone;
   final int zoneClosePeriod;
   final int? currentTime;
 
+=======
+  final bool replayFileAssembled;
+  final bool replayFileSentToServer;
+>>>>>>> f2884383bbbef5427ca3f66e920aebc3e475f18d
 
   @override
   Widget build(BuildContext context) {
@@ -53,26 +63,43 @@ class GameBanner extends StatelessWidget {
 
     // Game finished banner
     if (gameFinished) {
-      final String message;
+      final finishMessage = finishReason == 'host_ended'
+        ? 'Game ended by host'
+        : finishReason == 'all_caught'
+          ? 'All runners have been caught!'
+          : 'Game ended';
+
+      final String subtitle;
       final Color color;
 
       if (isHost) {
-        final allReceived = receivedReplaysCount >= totalPlayersCount;
-        message = allReceived ? 'All Replays Received.' : 'Receiving Replays...';
-        color = allReceived ? Colors.green : Colors.amber.shade700;
+        if (replayFileSentToServer) {
+          subtitle = 'Replay assembled and sent to server';
+          color = Colors.green;
+        } else if (replayFileAssembled) {
+          subtitle = 'Sending replay to server...';
+          color = Colors.amber.shade700;
+        } else {
+          subtitle = 'Waiting for replays... ($receivedReplaysCount/$totalPlayersCount)';
+          color = Colors.amber.shade700;
+        }
       } else {
-        message = replaySubmitted ? 'Replay Sent.' : 'Sending Replay...';
-        color = replaySubmitted ? Colors.green : Colors.amber.shade700;
+        if (replayFileAssembled) {
+          subtitle = 'Replay received and saved';
+          color = Colors.green;
+        } else if (replaySubmitted) {
+          subtitle = 'Replay sent, waiting for assembled replay...';
+          color = Colors.amber.shade700;
+        } else {
+          subtitle = 'Sending replay...';
+          color = Colors.amber.shade700;
+        }
       }
-
-      final finishMessage = finishReason == 'host_ended'
-        ? 'Game ended by host'
-        : 'All runners have been caught!';
 
       return _banner(
         color: color,
         title: finishMessage,
-        subtitle: message,
+        subtitle: subtitle,
       );
     }
 
@@ -81,7 +108,6 @@ class GameBanner extends StatelessWidget {
       final minutes = graceSecondsRemaining ~/ 60;
       final seconds = graceSecondsRemaining % 60;
       final timeStr = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-
       return _banner(
         color: isRunner ? Colors.blue : Colors.red,
         title: 'Grace Period: $timeStr',

@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class GameSession {
   static const String _prefsKey = 'online_session_exists';
   static const String _fileName = 'online_game_session.json';
+  static const String _replayFileName = 'online_game_replay.json';
 
   // Save the current game session to disk.
   static Future<void> save({
@@ -61,6 +62,16 @@ class GameSession {
       if (!await file.exists()) return null;
       final content = await file.readAsString();
       final json = jsonDecode(content) as Map<String, dynamic>;
+
+      // Check for separate replay file
+      final replayFile = await _getReplayFile();
+      if (await replayFile.exists()) {
+        try {
+          final replayContent = await replayFile.readAsString();
+          json['replayJson'] = jsonDecode(replayContent);
+        } catch (_) {}
+      }
+
       return GameSessionData.fromJson(json);
     } catch (e) {
       print('Failed to load online session: $e');
@@ -68,54 +79,38 @@ class GameSession {
     }
   }
 
-  // Clear the saved session
   static Future<void> clear() async {
     try {
       final file = await _getFile();
       if (await file.exists()) await file.delete();
     } catch (_) {}
+    try {
+      final replayFile = await _getReplayFile();
+      if (await replayFile.exists()) await replayFile.delete();
+    } catch (_) {}
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefsKey);
   }
 
+  static Future<File> _getReplayFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/$_replayFileName');
+  }
+
   // Update just the replay data in the existing session.
   static Future<void> updateReplay(Map<String, dynamic> replayJson) async {
-    final session = await load();
-    if (session == null) return;
-    await save(
-      gameId: session.gameId,
-      playerId: session.playerId,
-      playerName: session.playerName,
-      isHost: session.isHost,
-      gameStarted: session.gameStarted,
-      gameStartedAt: session.gameStartedAt,
-      faceOrder: session.faceOrder,
-      closureIntervalMs: session.closureIntervalMs,
-      gracePeriodMs: session.gracePeriodMs,
-      mapJson: session.mapJson,
-      replayJson: replayJson,
-      players: session.players,
-    );
+    final file = await _getReplayFile();
+    await file.writeAsString(jsonEncode(replayJson));
   }
 
   static Future<void> updateRole(String role) async {
-    final session = await load();
-    if (session == null) return;
-    await save(
-      gameId: session.gameId,
-      playerId: session.playerId,
-      playerName: session.playerName,
-      isHost: session.isHost,
-      gameStarted: session.gameStarted,
-      role: role,
-      gameStartedAt: session.gameStartedAt,
-      faceOrder: session.faceOrder,
-      closureIntervalMs: session.closureIntervalMs,
-      gracePeriodMs: session.gracePeriodMs,
-      mapJson: session.mapJson,
-      replayJson: session.replayJson,
-      players: session.players,
-    );
+    try {
+      final file = await _getFile();
+      if (!await file.exists()) return;
+      final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      json['role'] = role;
+      await file.writeAsString(jsonEncode(json));
+    } catch (_) {}
   }
 
   static Future<File> _getFile() async {

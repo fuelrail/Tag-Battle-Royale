@@ -4,13 +4,12 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../util/map_file_handler.dart';
-import '../util/replay/replay.dart';
 
 /// File session storage for offline games.
 class OfflineGameSession {
   static const String _prefsKey = 'offline_session_exists';
   static const String _fileName = 'offline_game_session.json';
+  static const String _replayFileName = 'offline_game_replay.json';
 
   final String playerName;
   final String displayName;
@@ -102,7 +101,18 @@ class OfflineGameSession {
       final file = await _getFile();
       if (!await file.exists()) return null;
       final content = await file.readAsString();
-      return OfflineGameSession.fromJson(jsonDecode(content));
+      final json = jsonDecode(content) as Map<String, dynamic>;
+
+      // Check for separate replay file
+      final replayFile = await _getReplayFile();
+      if (await replayFile.exists()) {
+        try {
+          final replayContent = await replayFile.readAsString();
+          json['replayJson'] = jsonDecode(replayContent);
+        } catch (_) {}
+      }
+
+      return OfflineGameSession.fromJson(json);
     } catch (e) {
       print('Failed to load offline session: $e');
       return null;
@@ -115,47 +125,33 @@ class OfflineGameSession {
       final file = await _getFile();
       if (await file.exists()) await file.delete();
     } catch (_) {}
+    try {
+      final replayFile = await _getReplayFile();
+      if (await replayFile.exists()) await replayFile.delete();
+    } catch (_) {}
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefsKey);
   }
 
+  static Future<File> _getReplayFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/$_replayFileName');
+  }
+
   // Update just the replay data in the existing session.
   static Future<void> updateReplay(Map<String, dynamic> replayJson) async {
-    final session = await load();
-    if (session == null) return;
-    await save(OfflineGameSession(
-      playerName: session.playerName,
-      displayName: session.displayName,
-      isHost: session.isHost,
-      role: session.role,
-      gameStarted: session.gameStarted,
-      gameStartedAt: session.gameStartedAt,
-      faceOrder: session.faceOrder,
-      closureIntervalMs: session.closureIntervalMs,
-      gracePeriodMs: session.gracePeriodMs,
-      mapJson: session.mapJson,
-      replayJson: replayJson,
-      players: session.players,
-    ));
+    final file = await _getReplayFile();
+    await file.writeAsString(jsonEncode(replayJson));
   }
 
   // Update just the role in the existing session.
   static Future<void> updateRole(String role) async {
-    final session = await load();
-    if (session == null) return;
-    await save(OfflineGameSession(
-      playerName: session.playerName,
-      displayName: session.displayName,
-      isHost: session.isHost,
-      role: role,
-      gameStarted: session.gameStarted,
-      gameStartedAt: session.gameStartedAt,
-      faceOrder: session.faceOrder,
-      closureIntervalMs: session.closureIntervalMs,
-      gracePeriodMs: session.gracePeriodMs,
-      mapJson: session.mapJson,
-      replayJson: session.replayJson,
-      players: session.players,
-    ));
+    try {
+      final file = await _getFile();
+      if (!await file.exists()) return;
+      final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      json['role'] = role;
+      await file.writeAsString(jsonEncode(json));
+    } catch (_) {}
   }
 }

@@ -292,7 +292,6 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   // Location and replay
   LocationService? _location;
   Replay? _replay;
-  int _framesSinceLastSave = 0;
   late ConfettiController _confettiController;
   final GlobalKey<LobbyLayoutState> _lobbyKey = GlobalKey<LobbyLayoutState>();
   final ScrollController _playersScrollController = ScrollController();
@@ -517,12 +516,8 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _displayClosedZones.value = _closedZones;
     _displayPlayers.updatePlayerPosition(userName, position, null);
     final closedZoneLength = _closedZones.length;
-    _displayNextZone.value = closedZoneLength < _activeFaceOrder.length ? _activeFaceOrder[closedZoneLength + 1] : null;
-    _framesSinceLastSave++;
-    if (_framesSinceLastSave >= 3) {
-      _framesSinceLastSave = 0;
-      _persistReplay();
-    }
+    _displayNextZone.value = closedZoneLength < _activeFaceOrder.length ? _activeFaceOrder[closedZoneLength] : null;
+    _persistReplay();
   }
 
   Future<void> _persistReplay() async {
@@ -2174,11 +2169,11 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
         children: [
           Text('Zone Closure', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
-          Text('Close a zone every ${_activeClosureIntervalMs ~/ 60000} minutes'),
+          Text('Close a zone every: ${_activeClosureIntervalMs ~/ 60000} minutes'),
           const SizedBox(height: 20),
           Text('Grace Period', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
-          Text('Grace period: ${_activeGracePeriodMs ~/ 1000} seconds'),
+          Text('Grace period of: ${_activeGracePeriodMs ~/ 1000} seconds'),
         ],
       ),
     );

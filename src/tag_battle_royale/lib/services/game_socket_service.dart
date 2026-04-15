@@ -92,6 +92,8 @@ class GameSocketService {
   JsonCallback? onPlayerAccepted;                 // { game, playerId }
   JsonCallback? onPlayerRejected;                 // { reason }
   JsonCallback? onPlayerKicked;                   // { reason }
+  JsonCallback? onZonesReordered;                 // { faceOrder }
+  JsonCallback? onReplayFileReceived;             // { replayFile }
   LocationBroadcastCallback? onLocationBroadcast; // { playerId: PlayerLocationInfo }
   ChatMessageCallback? onChatMessage;             // ChatMessage { playerId, playerName, text, timestamp, channel }
   ChatHistoryCallback? onChatHistory;             // (channel, List<ChatMessage>)
@@ -197,6 +199,14 @@ class GameSocketService {
 
     _socket.on('player:kicked', (data) {
       onPlayerKicked?.call(Map<String, dynamic>.from(data));
+    });
+
+    _socket.on('game:zonesreordered', (data) {
+      onZonesReordered?.call(Map<String, dynamic>.from(data));
+    });
+
+    _socket.on('replay:file', (data) {
+      onReplayFileReceived?.call(Map<String, dynamic>.from(data));
     });
 
     _socket.on('location:broadcast', (data) {
@@ -334,6 +344,13 @@ class GameSocketService {
     });
   }
 
+  void reorderZones(List<int> faceOrder) {
+    if (!_connected) return;
+    _socket.emit('game:reorderzones', {
+      'faceOrder': faceOrder,
+    });
+  }
+
   void acceptPlayer(String socketId) {
     _socket.emitWithAck('player:accept', {
       'socketId': socketId,
@@ -402,6 +419,13 @@ class GameSocketService {
     }, ack: (response) {
       final d = Map<String, dynamic>.from(response);
       onResult(d['ok'] == true);
+    });
+  }
+
+  void submitAssembledReplay(Map<String, dynamic> replayFileJson) {
+    if (!_connected) return;
+    _socket.emit('replay:assembled', {
+      'replayFile': replayFileJson,
     });
   }
 

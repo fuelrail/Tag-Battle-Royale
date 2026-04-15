@@ -366,6 +366,12 @@ function registerGameHandlers(io, socket, gameManager) {
         }
       }
 
+      // Send assembled replay to reconnecting non-host player
+      if (player.id !== game.hostId && game.assembledReplay) {
+        socket.emit("replay:file", { replayFile: game.assembledReplay });
+        console.log(`[game:rejoin] Sent assembled replay to reconnecting player "${player.name}"`);
+      }
+
       // Send pending players to reconnecting host
       if (player.id === game.hostId && game.pendingPlayers.size > 0) {
         socket.emit("player:pending", {
@@ -617,6 +623,48 @@ function registerGameHandlers(io, socket, gameManager) {
     _checkGameOver(io, game);
   });
 
+  socket.on("game:reorderzones", (data, callback) => {
+    const playerInfo = gameManager.getPlayerBySocketId(socket.id);
+    if (!playerInfo) {
+      return emitError(socket, callback, "game:reorderzones", "Not in a game");
+    }
+
+    const game = gameManager.getGame(playerInfo.gameId);
+    if (!game) {
+      return emitError(socket, callback, "game:reorderzones", "Game not found");
+    }
+
+    if (playerInfo.id !== game.hostId) {
+      return emitError(socket, callback, "game:reorderzones", "Only the host can reorder zones");
+    }
+
+    if (game.status !== "active") {
+      return emitError(socket, callback, "game:reorderzones", "Game is not active");
+    }
+
+    const newFaceOrder = data?.faceOrder;
+    if (!Array.isArray(newFaceOrder) || newFaceOrder.length === 0) {
+      return emitError(socket, callback, "game:reorderzones", "Face order is required");
+    }
+
+    // Validate same zones, just reordered
+    const oldSorted = [...game.faceOrder].sort();
+    const newSorted = [...newFaceOrder].sort();
+    if (JSON.stringify(oldSorted) !== JSON.stringify(newSorted)) {
+      return emitError(socket, callback, "game:reorderzones", "New face order must contain the same zones");
+    }
+
+    console.log(`[game:reorderzones] Host reordered zones in game ${game.id}: ${JSON.stringify(newFaceOrder)}`);
+    game.faceOrder = newFaceOrder;
+
+    if (callback) callback({ ok: true });
+
+    // Broadcast to all players including host
+    io.to(game.id).emit("game:zonesreordered", {
+      faceOrder: newFaceOrder,
+    });
+  });
+
   socket.on("game:end", (_, callback) => {
     const playerInfo = gameManager.getPlayerBySocketId(socket.id);
     if (!playerInfo) {
@@ -698,6 +746,47 @@ function registerGameHandlers(io, socket, gameManager) {
         console.log(`[replay:submit] Forwarded replay from "${playerInfo.name}" to host`);
       }
     }
+  });
+
+  socket.on("replay:assembled", (data, callback) => {
+    const playerInfo = gameManager.getPlayerBySocketId(socket.id);
+    if (!playerInfo) {
+      return emitError(socket, callback, "replay:assembled", "Not in a game");
+    }
+
+    const game = gameManager.getGame(playerInfo.gameId);
+    if (!game) {
+      return emitError(socket, callback, "replay:assembled", "Game not found");
+    }
+
+    if (playerInfo.id !== game.hostId) {
+      return emitError(socket, callback, "replay:assembled", "Only the host can submit assembled replays");
+    }
+
+    if (game.status !== "finished") {
+      return emitError(socket, callback, "replay:assembled", "Game is not finished");
+    }
+
+    const replayFileData = data?.replayFile;
+    if (!replayFileData) {
+      return emitError(socket, callback, "replay:assembled", "Replay file data is required");
+    }
+
+    game.assembledReplay = replayFileData;
+    console.log(`[replay:assembled] Host submitted assembled replay for game ${game.id}`);
+
+    if (callback) callback({ ok: true });
+
+    // Broadcast to all non-host connected players
+    for (const [id, player] of game.players) {
+      if (id === game.hostId) continue;
+      if (!player.connected || !player.socketId) continue;
+      const playerSocket = io.sockets.sockets.get(player.socketId);
+      if (playerSocket) {
+        playerSocket.emit("replay:file", { replayFile: replayFileData });
+      }
+    }
+    console.log(`[replay:assembled] Distributed assembled replay to players in game ${game.id}`);
   });
 
   // Re-check map confirmations if a player disconnects during starting phase
