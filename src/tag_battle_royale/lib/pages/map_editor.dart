@@ -75,24 +75,27 @@ class _MapEditorState extends State<MapEditor> {
                   itemBuilder: (context, index){
                     final map = maps[index];
                     return ListTile(
-                      leading: Icon(Icons.map),
+                      leading: Icon(
+                        Icons.map,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                       title: Text(map.mapName),
                       onTap: () async {
                         if(!context.mounted) return;
                         Navigator.push(
                           context,
-                          MaterialPageRoute(
-                            builder: (_) =>ExampleGame(
-                              map: map,
-                            ),
-                          ),
-                        );
                         //   MaterialPageRoute(
-                        //     builder: (_) => MapViewer(
+                        //     builder: (_) =>ExampleGame(
                         //       map: map,
                         //     ),
                         //   ),
                         // );
+                          MaterialPageRoute(
+                            builder: (_) => MapViewer(
+                              map: map,
+                            ),
+                          ),
+                        );
                       },
                       trailing: IconButton(
                         icon: Icon(

@@ -69,7 +69,7 @@ class _ReplayViewerState extends State<ReplayViewer> {
     }
     _image = await _map!.getImage();
     if(!mounted){return;}
-    setState(() {});
+    setState((){});
   }
 
   @override
@@ -149,32 +149,41 @@ class _ReplayViewerState extends State<ReplayViewer> {
     });
   }
 
-  ui.Offset? _getPositionAtTime(Replay replay, double time){
-    if(replay.positions.isEmpty) return null;
+  (ui.Offset, String) _getPlayerAtTime(Replay replay, double time){
 
-    if(time <= replay.positions.first.time){
-      return replay.positions.first.position;
-    }
+  if(time <= replay.positions.first.time){
+    final first = replay.positions.first;
+    return (first.position, first.role!);
+  }
 
-    if(time >= replay.positions.last.time){
-      return replay.positions.last.position;
-    }
+  if(time >= replay.positions.last.time){
+    final last = replay.positions.last;
+    return (last.position, last.role!);
+  }
 
-    for(int i = 0; i < replay.positions.length - 1; i++){
-      final a = replay.positions[i];
-      final b = replay.positions[i + 1];
-      if(time >= a.time && time <= b.time){
-        final span = b.time - a.time;
-        if(span <= 0) return a.position;
-        final t = (time - a.time) / span;
-        return ui.Offset(
+  for(int i = 0; i < replay.positions.length - 1; i++){
+    final a = replay.positions[i];
+    final b = replay.positions[i + 1];
+
+    if(time >= a.time && time <= b.time){
+      final span = b.time - a.time;
+      if(span <= 0) return (a.position, a.role!);
+
+      final t = (time - a.time) / span;
+
+      return (
+        ui.Offset(
           a.position.dx + ((b.position.dx - a.position.dx) * t),
           a.position.dy + ((b.position.dy - a.position.dy) * t),
-        );
-      }
+        ),
+        a.role!,
+      );
     }
-    return replay.positions.last.position;
   }
+
+  final last = replay.positions.last;
+  return (last.position, last.role!);
+}
 
   List<Face> _getClosedFacesAtTime(double time){
     final closedIds = widget.replayFile.getClosedZoneIdsAtTime(time).toSet();
@@ -262,10 +271,12 @@ class _ReplayViewerState extends State<ReplayViewer> {
                   valueListenable: _currentTime,
                   builder: (context, time, _){
                     final playerDrawData = selectedReplays.map((replay){
+                      final p = _getPlayerAtTime(replay, time);
                       return ReplayPlayerDrawData(
-                        position: _getPositionAtTime(replay, time),
+                        position: p.$1,
                         colour: replay.colour,
-                        label: replay.playerName,
+                        label: "${replay.playerName}\n${p.$2}",
+                        role: p.$2,
                       );
                     }).toList();
 
@@ -472,7 +483,7 @@ class _ReplayViewerState extends State<ReplayViewer> {
                                     );
                                   }).toList(),
                                 ),
-                              if (_activeTab == BottomTab.settings)
+                              if(_activeTab == BottomTab.settings)
                               Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -500,7 +511,7 @@ class _ReplayViewerState extends State<ReplayViewer> {
                                           ),
                                           Checkbox(
                                             value: showLabel,
-                                            onChanged: (value) {
+                                            onChanged: (value){
                                               setState(() => showLabel = value ?? true);
                                             },
                                           ),
@@ -561,11 +572,13 @@ class ReplayPlayerDrawData {
   final Offset? position;
   final Color colour;
   final String label;
+  final String role;
 
   ReplayPlayerDrawData({
     required this.position,
     required this.colour,
     required this.label,
+    required this.role,
   });
 }
 
@@ -581,14 +594,15 @@ class ReplayPlayersPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size){
     for(final player in players){
+      final colour = player.role == 'chaser'? Colors.red : Colors.black;
       if(player.position == null) continue;
 
       final glowPaint = Paint()
-        ..color = player.colour.withValues(alpha: 0.25)
+        ..color = colour.withValues(alpha: 0.25)
         ..style = PaintingStyle.fill;
 
       final fillPaint = Paint()
-        ..color = player.colour
+        ..color = colour
         ..style = PaintingStyle.fill;
 
       final strokePaint = Paint()

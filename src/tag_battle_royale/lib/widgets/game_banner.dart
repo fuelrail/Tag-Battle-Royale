@@ -14,6 +14,9 @@ class GameBanner extends StatelessWidget {
     required this.graceSecondsRemaining,
     required this.myRole,
     required this.pendingPlayersCount,
+    required this.currentTime,
+    required this.zoneClosePeriod,
+    this.inBadZone = false,
   });
 
   final bool gameStarted;
@@ -27,6 +30,10 @@ class GameBanner extends StatelessWidget {
   final int graceSecondsRemaining;
   final String myRole;
   final int pendingPlayersCount;
+  final bool inBadZone;
+  final int zoneClosePeriod;
+  final int? currentTime;
+
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +48,8 @@ class GameBanner extends StatelessWidget {
         subtitle: 'Accept in the player list',
       );
     }
+    final isRunner = myRole == 'runner';
+    final duringGame = gameStarted && !inGracePeriod && !gameFinished;
 
     // Game finished banner
     if (gameFinished) {
@@ -69,7 +78,6 @@ class GameBanner extends StatelessWidget {
 
     // Grace period banner
     if (gameStarted && inGracePeriod && graceSecondsRemaining > 0) {
-      final isRunner = myRole == 'runner';
       final minutes = graceSecondsRemaining ~/ 60;
       final seconds = graceSecondsRemaining % 60;
       final timeStr = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
@@ -78,6 +86,33 @@ class GameBanner extends StatelessWidget {
         color: isRunner ? Colors.blue : Colors.red,
         title: 'Grace Period: $timeStr',
         subtitle: isRunner ? 'Run!' : 'Stay in place!',
+      );
+    }
+
+    // runner outside zone banner
+    if(inBadZone && duringGame){
+      if(isRunner){
+        return _banner(
+          color: Colors.blue,
+          title: 'Turn Back!',
+          subtitle: 'You are not in an open zone\nThe Chasers can now see you',
+        );
+      }
+    }
+
+    // time till next zone close
+    if (duringGame && currentTime != null){
+      final totalPeriodSeconds = zoneClosePeriod * 60;
+      final elapsedSeconds = currentTime! ~/ 1000;
+      final remainingSeconds =totalPeriodSeconds - (elapsedSeconds % totalPeriodSeconds);
+      final minutes = remainingSeconds ~/ 60;
+      final seconds = remainingSeconds % 60;
+      final timeStr = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+
+      return _banner(
+        color: isRunner ? Colors.blue : Colors.red,
+        title: 'Time till next zone closing:',
+        subtitle:  timeStr,
       );
     }
 

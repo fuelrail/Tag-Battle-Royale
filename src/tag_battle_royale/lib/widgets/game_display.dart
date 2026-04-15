@@ -78,7 +78,6 @@ class _GameDisplayState extends State<GameDisplay> {
                   image: image!,
                   map: widget.map,
                   drawMode: false,
-                  drawLabel: true,
                   next: widget.next,
                 ),
               ),

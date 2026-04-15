@@ -247,7 +247,7 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
                   icon: const Icon(Icons.refresh),
                   label: Text('Reconnect to ${_savedSession!.gameId}'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: Colors.teal,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () => _reconnect(context),

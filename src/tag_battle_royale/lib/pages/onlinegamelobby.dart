@@ -66,10 +66,13 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   final ScrollController _playersScrollController = ScrollController();
   final List<String> _log = [];
 
+  // display
   final Players _displayPlayers = Players();
   final ValueNotifier<int?> _displayCurrentZone = ValueNotifier(null);
   final ValueNotifier<Set<int>> _displayClosedZones = ValueNotifier({});
   final ValueNotifier<int?> _displayNextZone = ValueNotifier(null);
+  final showLabel = true;
+  int? _lastBroadcastTime;
 
   // Chat
   final Map<String, List<ChatMessage>> _chatMessages = {
@@ -101,9 +104,14 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   int _activeGracePeriodMs = 90 * 1000;
   final Map<String, PlayerLocationInfo> _playerLocations = {};
 
+  bool _inBadZone = false;
+
   // Grace period
   Timer? _graceTimer;
   int _graceSecondsRemaining = 0;
+
+  // Display zone close
+  Timer? _bannerTimer;
 
   // Replay
   Replay? _replay;
@@ -148,6 +156,14 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   }
 
   // --- Lifecycle ---
+
+  void _setUp(){
+    _location?.getClosedZones = () => _closedZones;
+    _location?.updateCurrentZone = _updateCurrentZone;
+    _location?.updatePlayerPosition = _updatePlayerPosition;
+    _location?.inClosedZone = _inBadZone;
+    _location?.updateInClosedZone = _updateInBadZone;
+  }
 
   @override
   void initState() {
@@ -250,9 +266,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
     // Set role from session
     _updateLocationRole();
-    _location?.getClosedZones = () => _closedZones;
-    _location?.updateCurrentZone = _updateCurrentZone;
-    _location?.updatePlayerPosition = _updatePlayerPosition;
+    _setUp();
 
     // Set up frame recording with persistence
     _location?.onFrameRecorded = (position, zone, role) {
@@ -265,6 +279,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     };
 
     _startGraceCountdown();
+    _startBannerTimer();
     if (_receivedMap != null) _location?.startTracking();
 
     _addLog('Resumed from saved session (connecting in background...)');
@@ -273,6 +288,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   @override
   void dispose() {
     _unhookCallbacks();
+    _bannerTimer?.cancel();
     _graceTimer?.cancel();
     _replayRetryTimer?.cancel();
     _confettiController.dispose();
@@ -320,6 +336,27 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       });
     });
   }
+  // timer for updating time till zone closes
+  void _startBannerTimer() {
+    _bannerTimer?.cancel();
+    _bannerTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || !_gameStarted || _gameFinished) {
+        _bannerTimer?.cancel();
+        _bannerTimer = null;
+        return;
+      }
+      setState(() {});
+    });
+  }
+
+  void _stopBannerTimer() {
+    _bannerTimer?.cancel();
+    _bannerTimer = null;
+  }
+
+  void _updateInBadZone(bool isInBadZone){
+    setState(() => _inBadZone = isInBadZone);
+  }
 
   void _updateCurrentZone(int? id){
     if(id != _displayCurrentZone.value){
@@ -332,16 +369,20 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     player?.updateColour(colour);
   }
 
-  void _updatePlayerPosition(Offset? pos){;
+  void _updatePlayerPosition(Offset? pos){
     if(_socket!.currentPlayerId == null){return;}
-    _displayPlayers.updatePlayerPosition(_socket!.currentPlayerId!, pos);
+    _displayPlayers.updatePlayerPosition(_socket!.currentPlayerId!, pos, null);
     _displayPlayers.update();
   }
   
   void _setUpDisplay(){
     for(final player in _players){
-      final p = Player(id: player.id,name: player.name,colour:player.nameColour);
-      _displayPlayers.addPlayer(p);
+      final p = _displayPlayers.getPlayer(player.id);
+      if(p == null){
+        _displayPlayers.addPlayer(Player(id: player.id,name: player.name,colour:player.nameColour));
+      }else{
+        p.colour = player.nameColour;
+      }
     }
   }
   // --- Replay ---
@@ -382,7 +423,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       }
     } else{_addLog("Map already saved Locally");}
   }
-  
+
   Future<void> _persistReplay() async {
     if (_replay == null) return;
     try {
@@ -539,6 +580,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   // --- Game finished ---
 
   void _onGameFinished(Map<String, dynamic> data) {
+    _stopBannerTimer(); 
     final reason = data['reason']?.toString() ?? 'unknown';
     final serverPlayers = data['players'] as List?;
 
@@ -687,12 +729,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       _saveFullSession();
 
       _updateLocationRole();
-      _location?.getClosedZones = () => _closedZones;
-      _location?.updateCurrentZone = _updateCurrentZone;
-      _location?.updatePlayerPosition = _updatePlayerPosition;
+      _setUp();
       // Tracking will start when the map arrives
       if (!_gameFinished) {
         _startGraceCountdown();
+        _startBannerTimer();
         if (_replay == null) await _restoreOrStartReplay();
       }
     };
@@ -749,10 +790,9 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
       // Set role and start tracking
       _updateLocationRole();
-      _location?.getClosedZones = () => _closedZones;
-      _location?.updateCurrentZone = _updateCurrentZone;
-      _location?.updatePlayerPosition = _updatePlayerPosition;
+      _setUp();
       _startGraceCountdown();
+      _startBannerTimer();
       _startReplay();
       if (_location?.map != null) _location?.startTracking();
     };
@@ -791,9 +831,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
         if (_gameStarted && !_location!.isTracking) {
           _updateLocationRole();
-          _location?.getClosedZones = () => _closedZones;
-          _location?.updateCurrentZone = _updateCurrentZone;
-          _location?.updatePlayerPosition = _updatePlayerPosition;
+          _setUp();
           _location?.startTracking();
         }
 
@@ -821,20 +859,35 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   
     _socket!.onLocationBroadcast = (players) {
       if (!mounted) return;
-      _addLog('Broadcast: ${players.entries.map((e) {
-        final p = e.value;
-        final pos = p.x != null
-          ? '(${p.x!.toStringAsFixed(1)}, ${p.y!.toStringAsFixed(1)})'
-          : 'no pos';
-          // update user position display
-          final point = p.status=="active" 
-          ? ui.Offset(p.x!,p.y!) 
-          : null;
-          _displayPlayers.updatePlayerPosition(p.playerId, point);
-          
+      final List<String> logParts = [];
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
-        return '${p.playerName}(${p.role}) $pos ${p.status}';
-      }).join(', ')}');
+      _lastBroadcastTime ??= now;
+      final deltaMs = now - _lastBroadcastTime!;
+
+      for(final entry in players.entries){
+        final p = entry.value;
+
+        final hasPosition = p.x != null && p.y != null;
+        final isActive = p.status == "active";
+
+        if(isActive && hasPosition){
+          final point = ui.Offset(p.x!, p.y!);
+          _displayPlayers.updatePlayerPosition(p.playerId, point, p.locationAge,);
+        }else{
+          _displayPlayers.incrementPlayerAge( p.playerId, deltaMs);
+        }
+
+        final posText = hasPosition
+            ? '(${p.x!.toStringAsFixed(1)}, ${p.y!.toStringAsFixed(1)})'
+            : 'no pos';
+
+        logParts.add('${p.playerName}(${p.role}) $posText ${p.status}');
+      }
+
+      _lastBroadcastTime = now;
+
+      _addLog('Broadcast: ${logParts.join(', ')}');
       _displayPlayers.update();
       setState(() {
         _playerLocations
@@ -1475,7 +1528,6 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   }
 
   void _selectNextZone(ui.Offset point) async {
-    print("hello");
     if(_inGracePeriod || !_gameStarted || _gameFinished){return;}
     if(_receivedMap == null){return;}
     final graph = _receivedMap!.graph;
@@ -1932,7 +1984,8 @@ Widget _buildLobbyTopSection(BuildContext context) {
             currentZoneNotifier: _displayCurrentZone,
             players: _displayPlayers,
             next: _displayNextZone,
-            onTapScene: _selectNextZone,
+            onTapScene: isHost ? _selectNextZone : null,
+            showPlayerNames: showLabel,
           ),
           if (amRunner)
             Positioned(
@@ -2021,6 +2074,9 @@ Widget _buildLobbyTopSection(BuildContext context) {
               graceSecondsRemaining: _graceSecondsRemaining,
               myRole: _myRole,
               pendingPlayersCount: _pendingPlayers.length,
+              inBadZone: _inBadZone,
+              zoneClosePeriod: _closureMinutes,
+              currentTime: _gameStartedAt != null ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs : null,
             )
           : null,
         gameStarted: _gameStarted,
