@@ -366,6 +366,12 @@ function registerGameHandlers(io, socket, gameManager) {
         }
       }
 
+      // Send assembled replay to reconnecting non-host player
+      if (player.id !== game.hostId && game.assembledReplay) {
+        socket.emit("replay:file", { replayFile: game.assembledReplay });
+        console.log(`[game:rejoin] Sent assembled replay to reconnecting player "${player.name}"`);
+      }
+
       // Send pending players to reconnecting host
       if (player.id === game.hostId && game.pendingPlayers.size > 0) {
         socket.emit("player:pending", {
@@ -740,6 +746,47 @@ function registerGameHandlers(io, socket, gameManager) {
         console.log(`[replay:submit] Forwarded replay from "${playerInfo.name}" to host`);
       }
     }
+  });
+
+  socket.on("replay:assembled", (data, callback) => {
+    const playerInfo = gameManager.getPlayerBySocketId(socket.id);
+    if (!playerInfo) {
+      return emitError(socket, callback, "replay:assembled", "Not in a game");
+    }
+
+    const game = gameManager.getGame(playerInfo.gameId);
+    if (!game) {
+      return emitError(socket, callback, "replay:assembled", "Game not found");
+    }
+
+    if (playerInfo.id !== game.hostId) {
+      return emitError(socket, callback, "replay:assembled", "Only the host can submit assembled replays");
+    }
+
+    if (game.status !== "finished") {
+      return emitError(socket, callback, "replay:assembled", "Game is not finished");
+    }
+
+    const replayFileData = data?.replayFile;
+    if (!replayFileData) {
+      return emitError(socket, callback, "replay:assembled", "Replay file data is required");
+    }
+
+    game.assembledReplay = replayFileData;
+    console.log(`[replay:assembled] Host submitted assembled replay for game ${game.id}`);
+
+    if (callback) callback({ ok: true });
+
+    // Broadcast to all non-host connected players
+    for (const [id, player] of game.players) {
+      if (id === game.hostId) continue;
+      if (!player.connected || !player.socketId) continue;
+      const playerSocket = io.sockets.sockets.get(player.socketId);
+      if (playerSocket) {
+        playerSocket.emit("replay:file", { replayFile: replayFileData });
+      }
+    }
+    console.log(`[replay:assembled] Distributed assembled replay to players in game ${game.id}`);
   });
 
   // Re-check map confirmations if a player disconnects during starting phase

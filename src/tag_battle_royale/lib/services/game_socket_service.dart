@@ -93,6 +93,7 @@ class GameSocketService {
   JsonCallback? onPlayerRejected;                 // { reason }
   JsonCallback? onPlayerKicked;                   // { reason }
   JsonCallback? onZonesReordered;                 // { faceOrder }
+  JsonCallback? onReplayFileReceived;             // { replayFile }
   LocationBroadcastCallback? onLocationBroadcast; // { playerId: PlayerLocationInfo }
   ChatMessageCallback? onChatMessage;             // ChatMessage { playerId, playerName, text, timestamp, channel }
   ChatHistoryCallback? onChatHistory;             // (channel, List<ChatMessage>)
@@ -202,6 +203,10 @@ class GameSocketService {
 
     _socket.on('game:zonesreordered', (data) {
       onZonesReordered?.call(Map<String, dynamic>.from(data));
+    });
+
+    _socket.on('replay:file', (data) {
+      onReplayFileReceived?.call(Map<String, dynamic>.from(data));
     });
 
     _socket.on('location:broadcast', (data) {
@@ -414,6 +419,13 @@ class GameSocketService {
     }, ack: (response) {
       final d = Map<String, dynamic>.from(response);
       onResult(d['ok'] == true);
+    });
+  }
+
+  void submitAssembledReplay(Map<String, dynamic> replayFileJson) {
+    if (!_connected) return;
+    _socket.emit('replay:assembled', {
+      'replayFile': replayFileJson,
     });
   }
 

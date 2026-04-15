@@ -111,6 +111,9 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   Timer? _replayRetryTimer;
   final Map<String, Map<String, dynamic>> _receivedReplays = {}; // { playerId: replayJson }
   int _framesSinceLastSave = 0;
+  bool _replayFileAssembled = false;
+  bool _replayFileSentToServer = false;
+  Map<String, dynamic>? _assembledReplayJson;
 
   // --- Get properties ---
 
@@ -359,11 +362,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
     _location?.onFrameRecorded = (position, zone, role) {
       _replay?.add(position, zone: zone, role: role);
-      _framesSinceLastSave++;
-      if (_framesSinceLastSave >= 3) {
-        _framesSinceLastSave = 0;
-        _persistReplay();
-      }
+      _persistReplay();
     };
 
     _addLog('Replay recording started');
@@ -436,11 +435,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
         _location?.onFrameRecorded = (position, zone, role) {
           _replay?.add(position, zone: zone, role: role);
-          _framesSinceLastSave++;
-          if (_framesSinceLastSave >= 3) {
-            _framesSinceLastSave = 0;
-            _persistReplay();
-          }
+          _persistReplay();
         };
       } catch (e) {
         _addLog('Failed to restore replay: $e');
@@ -479,11 +474,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     });
   }
 
-  Future<void> _assembleAndSaveReplay() async {
+  Future<void> _assembleReplay() async {
     if (_receivedMap == null) {
       _addLog('ERROR: No map data for replay assembly');
       return;
     }
+    if (_replayFileAssembled) return;
     _addLog("Saving map ...");
     _saveMap();
 
@@ -519,13 +515,18 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         zoneClosings: zoneClosings,
       );
       await replayFile.saveReplayFile();
+      _assembledReplayJson = replayFile.toJson();
       _addLog('Replay saved: ${replayFile.replayName}');
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Replay saved: ${replayFile.replayName}')),
         );
       }
+
+      setState(() => _replayFileAssembled = true);
+
+      // Auto send to server
+      _sendAssembledReplayToServer();
     } catch (e) {
       _addLog('ERROR: Failed to save replay: $e');
       if (mounted) {
@@ -533,6 +534,38 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
           const SnackBar(content: Text('Failed to save replay')),
         );
       }
+    }
+  }
+
+  void _sendAssembledReplayToServer() {
+    if (_assembledReplayJson == null || _replayFileSentToServer) return;
+    if (_socket == null || !_socket!.isConnected) {
+      _addLog('Not connected, will send assembled replay when reconnected');
+      return;
+    }
+    _addLog('Sending assembled replay to server...');
+    _socket!.submitAssembledReplay(_assembledReplayJson!);
+    setState(() => _replayFileSentToServer = true);
+    _addLog('Assembled replay sent to server');
+  }
+
+  Future<void> _saveReceivedReplayFile(Map<String, dynamic> json) async {
+    try {
+      final replayFile = ReplayFile.fromJson(json);
+      await replayFile.saveReplayFile();
+      // Save the map so the replay can be viewed
+      if (_receivedMap != null) {
+        await _receivedMap!.saveMapFile();
+      }
+      setState(() => _replayFileAssembled = true);
+      _addLog('Replay saved: ${replayFile.replayName}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Replay saved: ${replayFile.replayName}')),
+        );
+      }
+    } catch (e) {
+      _addLog('ERROR: Failed to save received replay: $e');
     }
   }
 
@@ -583,6 +616,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       if (_gameStarted) _location?.notifySocketConnected();
 
       if (_gameFinished && !_replaySubmitted) _submitReplay();
+
+      if (_gameFinished && _replayFileAssembled && !_replayFileSentToServer) {
+        _sendAssembledReplayToServer();
+      }
     };
 
     _socket!.onDisconnected = () {
@@ -690,10 +727,16 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       _location?.getClosedZones = () => _closedZones;
       _location?.updateCurrentZone = _updateCurrentZone;
       _location?.updatePlayerPosition = _updatePlayerPosition;
+
       // Tracking will start when the map arrives
       if (!_gameFinished) {
         _startGraceCountdown();
         if (_replay == null) await _restoreOrStartReplay();
+
+      } else {
+        // Restore replay from session and submit
+        if (_replay == null) await _restoreOrStartReplay();
+        if (!_replaySubmitted) _submitReplay();
       }
     };
 
@@ -899,6 +942,20 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       final frameCount = (replayData['positions'] as List?)?.length ?? 0;
       _addLog('Replay received from $playerName ($frameCount frames) '
         '[${_receivedReplays.length}/${_players.length}]');
+
+      // Auto assemble if all replays received
+      if (isHost && _receivedReplays.length >= _players.length && !_replayFileAssembled) {
+        _assembleReplay();
+      }
+    };
+
+    _socket!.onReplayFileReceived = (data) {
+      if (!mounted) return;
+      final replayFileJson = data['replayFile'] as Map<String, dynamic>?;
+      if (replayFileJson == null) return;
+
+      _addLog('Received assembled replay file from server');
+      _saveReceivedReplayFile(replayFileJson);
     };
 
     _socket!.onGameDisbanded = (data) {
@@ -947,6 +1004,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _socket?.onMapData = null;
     _socket?.onPlayerRoleUpdated = null;
     _socket?.onReplayReceived = null;
+    _socket?.onReplayFileReceived = null;
     _socket?.onGameDisbanded = null;
     _socket?.onZonesReordered = null;
     _socket?.onError = null;
@@ -1099,13 +1157,6 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     if (confirmed == true) _socket?.endGame();
   }
 
-  Future<void> _leaveAndAssembleReplay() async {
-    await _assembleAndSaveReplay();
-    if (mounted) {
-      Navigator.popUntil(context, (route) => route.isFirst);
-    }
-  }
-
   // --- Helpers ---
 
   void _addLog(String message) {
@@ -1129,16 +1180,26 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
     if (_gameFinished) {
       if (isHost) {
+        if (_replayFileSentToServer) {
+          // Host has sent assembled replay, just leave
+          return true;
+        }
         title = 'Leave game?';
-        content = "This game's replay has not been generated.";
-      }
-      else if (!_replaySubmitted) {
-        title = 'Leave game?';
-        content = 'Your replay has not been sent.';
-      }
-      else {
-        // Player's replay was sent, just leave
-        return true;
+        content = _replayFileAssembled
+            ? 'The assembled replay has not been sent to the server yet.'
+            : "This game's replay has not been generated.";
+      } else {
+        if (_replayFileAssembled) {
+          // Non-host received and saved replay, just leave
+          return true; 
+        }
+        if (_replaySubmitted) {
+          title = 'Leave game?';
+          content = 'You have not received the assembled replay yet.';
+        } else {
+          title = 'Leave game?';
+          content = 'Your replay has not been sent.';
+        }
       }
     } else if (_gameStarted) {
       title = 'Leave game?';
@@ -1767,18 +1828,20 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
             Text('Replays received: ${_receivedReplays.length}/${_players.length}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: FilledButton.icon(
-                icon: const Icon(Icons.save),
-                label: const Text('Leave Game and Assemble Replay'),
-                onPressed: _leaveAndAssembleReplay,
+            if (!_replayFileAssembled) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.build),
+                  label: Text('Assemble Replay (${_receivedReplays.length}/${_players.length})'),
+                  onPressed: _assembleReplay,
+                ),
               ),
-            ),
+            ],
           ],
-        ]
+        ],
       ),
     );
   }
@@ -1992,7 +2055,7 @@ Widget _buildLobbyTopSection(BuildContext context) {
 
   @override
   Widget build(BuildContext context) {
-    // Determine if banner should show (SizedBox.shrink if nothing to show)
+    // Determine if banner should show
     final showBanner = !_pendingAcceptance && (_gameId != null || _gameStarted || _gameFinished);
 
     return PopScope(
@@ -2046,6 +2109,8 @@ Widget _buildLobbyTopSection(BuildContext context) {
               graceSecondsRemaining: _graceSecondsRemaining,
               myRole: _myRole,
               pendingPlayersCount: _pendingPlayers.length,
+              replayFileAssembled: _replayFileAssembled,
+              replayFileSentToServer: _replayFileSentToServer,
             )
           : null,
         gameStarted: _gameStarted,
