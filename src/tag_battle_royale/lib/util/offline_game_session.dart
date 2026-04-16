@@ -17,6 +17,7 @@ class OfflineGameSession {
   final String role;
   final bool gameStarted;
   final int? gameStartedAt; // milliseconds since epoch
+  final String lobbyName;
   final List<int> faceOrder;
   final int closureIntervalMs;
   final int gracePeriodMs;
@@ -31,6 +32,7 @@ class OfflineGameSession {
     required this.role,
     required this.gameStarted,
     this.gameStartedAt,
+    this.lobbyName = '',
     this.faceOrder = const [],
     this.closureIntervalMs = 900000,
     this.gracePeriodMs = 90000,
@@ -46,6 +48,7 @@ class OfflineGameSession {
         'role': role,
         'gameStarted': gameStarted,
         'gameStartedAt': gameStartedAt,
+        'lobbyName': lobbyName,
         'faceOrder': faceOrder,
         'closureIntervalMs': closureIntervalMs,
         'gracePeriodMs': gracePeriodMs,
@@ -62,6 +65,7 @@ class OfflineGameSession {
       role: json['role'] ?? 'runner',
       gameStarted: json['gameStarted'] ?? false,
       gameStartedAt: json['gameStartedAt'],
+      lobbyName: json['lobbyName'] ?? '',
       faceOrder: (json['faceOrder'] as List?)?.cast<int>() ?? [],
       closureIntervalMs: json['closureIntervalMs'] ?? 900000,
       gracePeriodMs: json['gracePeriodMs'] ?? 90000,

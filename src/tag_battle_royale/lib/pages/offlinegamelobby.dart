@@ -49,6 +49,11 @@ class Cmd {
   static const String _gameMap = 'CMD:GAME_MAP:';
   static const String _mapConfirmed = 'CMD:MAP_CONFIRMED:';
   static const String _gameStarted = 'CMD:GAME_STARTED:';
+  static const String _replayData = 'CMD:REPLAY_DATA:';
+  static const String _replayAck = 'CMD:REPLAY_ACK:';
+  static const String _replayFileData = 'CMD:REPLAY_FILE:';
+  static const String _replayFileAck = 'CMD:REPLAY_FILE_ACK:';
+  static const String _chunk = 'CMD:CHUNK:';
 
   // Build
   static String username(String userName, String displayName) =>
@@ -90,6 +95,20 @@ class Cmd {
       '$_mapConfirmed$userName';
   static String gameStarted(int startedAtMs) => 
       '$_gameStarted$startedAtMs';
+  static String replayData(String userName, Map<String, dynamic> replay) {
+      final jsonStr = jsonEncode({'userName': userName, 'replay': replay});
+      return '$_replayData${base64Encode(utf8.encode(jsonStr))}';
+  }
+  static String replayAck(String userName) => 
+      '$_replayAck$userName';
+  static String replayFileData(Map<String, dynamic> replayFile) {
+      final jsonStr = jsonEncode(replayFile);
+      return '$_replayFileData${base64Encode(utf8.encode(jsonStr))}';
+  }
+  static String replayFileAck(String userName) => 
+      '$_replayFileAck$userName';
+  static String chunk(String transferId, int index, int total, bool flood, String data) =>
+      '$_chunk$transferId:$index:$total:${flood ? '1' : '0'}:$data';
 
   // Check
   static bool isUsername(String m) => m.startsWith(_username);
@@ -110,68 +129,73 @@ class Cmd {
   static bool isGameMap(String m) => m.startsWith(_gameMap);
   static bool isMapConfirmed(String m) => m.startsWith(_mapConfirmed);
   static bool isGameStarted(String m) => m.startsWith(_gameStarted);
+  static bool isReplayData(String m) => m.startsWith(_replayData);
+  static bool isReplayAck(String m) => m.startsWith(_replayAck);
+  static bool isReplayFileData(String m) => m.startsWith(_replayFileData);
+  static bool isReplayFileAck(String m) => m.startsWith(_replayFileAck);
+  static bool isChunk(String m) => m.startsWith(_chunk);
 
   // Parse
   static (String userName, String displayName) parseUsername(String m) {
-    final parts = m.substring(_username.length).split(':');
-    return (parts[0], parts[1]);
+      final parts = m.substring(_username.length).split(':');
+      return (parts[0], parts[1]);
   }
 
   static String parseBecomeHost(String m) => 
       m.substring(_becomeHost.length);
 
   static (String parent, String child) parseReportChild(String m) {
-    final p = m.substring(_reportChild.length).split(':');
-    return (p[0], p[1]);
+      final p = m.substring(_reportChild.length).split(':');
+      return (p[0], p[1]);
   }
 
   static (String parent, String child) parseReportDisconnect(String m) {
-    final p = m.substring(_reportDisconnect.length).split(':');
-    return (p[0], p[1]);
+      final p = m.substring(_reportDisconnect.length).split(':');
+      return (p[0], p[1]);
   }
 
   static (String sender, String target, String inner) parseRelay(String m) {
-    final payload = m.substring(_relay.length);
-    final i1 = payload.indexOf(':');
-    final i2 = payload.indexOf(':', i1 + 1);
-    return (payload.substring(0, i1), payload.substring(i1 + 1, i2), payload.substring(i2 + 1));
+      final payload = m.substring(_relay.length);
+      final i1 = payload.indexOf(':');
+      final i2 = payload.indexOf(':', i1 + 1);
+      return (payload.substring(0, i1), payload.substring(i1 + 1, i2), payload.substring(i2 + 1));
   }
 
   static (String playerId, String playerName, String text) parseChat(String m) {
-    final parts = m.substring(_chat.length).split(':');
-    return (parts[0], parts[1], parts.sublist(2).join(':')); // sublist used because reason may contain ':'
+      final parts = m.substring(_chat.length).split(':');
+      return (parts[0], parts[1], parts.sublist(2).join(':')); // sublist used because reason may contain ':'
   }
 
   static List<PlayerData> parsePlayerList(String m) {
-    final payload = m.substring(_playerList.length);
-    if (payload.isEmpty) return [];
-    return payload.split(',').where((s) => s.isNotEmpty).map((entry) {
-      final parts = entry.split(':');
-      return PlayerData(
-        id: parts[0],
-        name: parts.length > 1 ? parts[1] : parts[0],
-        role: parts.length > 2 ? parts[2] : 'runner',
-        isHost: parts.length > 3 && parts[3] == '1',
-      );
-    }).toList();
+      final payload = m.substring(_playerList.length);
+      if (payload.isEmpty) return [];
+      return payload.split(',').where((s) => s.isNotEmpty).map((entry) {
+        final parts = entry.split(':');
+        return PlayerData(
+          id: parts[0],
+          name: parts.length > 1 ? parts[1] : parts[0],
+          role: parts.length > 2 ? parts[2] : 'runner',
+          isHost: parts.length > 3 && parts[3] == '1',
+        );
+      }).toList();
   }
 
   static (String advertiser, String joinerUser, String joinerDisplay) parseJoinRequest(String m) {
-    final parts = m.substring(_joinRequest.length).split(':');
-    return (parts[0], parts[1], parts[2]);
+      final parts = m.substring(_joinRequest.length).split(':');
+      return (parts[0], parts[1], parts[2]);
   }
 
   static String parsePlayerAccept(String m) =>
       m.substring(_playerAccept.length);
   
   static (String joinerUser, String reason) parsePlayerReject(String m) {
-    final parts = m.substring(_playerReject.length).split(':');
-    return (parts[0], parts.sublist(1).join(':'));
+      final parts = m.substring(_playerReject.length).split(':');
+      return (parts[0], parts.sublist(1).join(':'));
   }
 
   static (String playerId, String role) parseRoleUpdate(String m) {
-    final p = m.substring(_roleUpdate.length).split(':');
-    return (p[0], p[1]);
+      final p = m.substring(_roleUpdate.length).split(':');
+      return (p[0], p[1]);
   }
 
   static String parseKick(String m) => 
@@ -187,12 +211,47 @@ class Cmd {
       m.substring(_pendingDisconnect.length);
 
   static Map<String, dynamic> parseGameMap(String m) {
-    final b64 = m.substring(_gameMap.length);
-    final jsonStr = utf8.decode(base64Decode(b64));
-    return jsonDecode(jsonStr) as Map<String, dynamic>;
+      final b64 = m.substring(_gameMap.length);
+      final jsonStr = utf8.decode(base64Decode(b64));
+      return jsonDecode(jsonStr) as Map<String, dynamic>;
   }
-  static String parseMapConfirmed(String m) => m.substring(_mapConfirmed.length);
-  static int parseGameStarted(String m) => int.parse(m.substring(_gameStarted.length));
+
+  static String parseMapConfirmed(String m) => 
+      m.substring(_mapConfirmed.length);
+
+  static int parseGameStarted(String m) => 
+      int.parse(m.substring(_gameStarted.length));
+
+  static Map<String, dynamic> parseReplayData(String m) {
+      final b64 = m.substring(_replayData.length);
+      return jsonDecode(utf8.decode(base64Decode(b64))) as Map<String, dynamic>;
+  }
+
+  static String parseReplayAck(String m) => 
+      m.substring(_replayAck.length);
+
+  static Map<String, dynamic> parseReplayFileData(String m) {
+      final b64 = m.substring(_replayFileData.length);
+      return jsonDecode(utf8.decode(base64Decode(b64))) as Map<String, dynamic>;
+  }
+
+  static String parseReplayFileAck(String m) => 
+      m.substring(_replayFileAck.length);
+
+  static (String transferId, int index, int total, bool flood, String data) parseChunk(String m) {
+      final payload = m.substring(_chunk.length);
+      final i1 = payload.indexOf(':');
+      final i2 = payload.indexOf(':', i1 + 1);
+      final i3 = payload.indexOf(':', i2 + 1);
+      final i4 = payload.indexOf(':', i3 + 1);
+      return (
+        payload.substring(0, i1),
+        int.parse(payload.substring(i1 + 1, i2)),
+        int.parse(payload.substring(i2 + 1, i3)),
+        payload.substring(i3 + 1, i4) == '1',
+        payload.substring(i4 + 1),
+      );
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -203,8 +262,12 @@ class DiscoveredEndpoint {
   final String id;
   final String name;
   final String serviceId;
-  DiscoveredEndpoint(
-      {required this.id, required this.name, required this.serviceId});
+  
+  DiscoveredEndpoint({
+    required this.id, 
+    required this.name, 
+    required this.serviceId,
+  });
 }
 
 // --------------------------------------------------------------------------
@@ -212,8 +275,14 @@ class DiscoveredEndpoint {
 // --------------------------------------------------------------------------
 
 class OfflineConnectionScreen extends StatefulWidget {
-  const OfflineConnectionScreen(
-      {super.key, required this.role, required this.nickName, required this.lobbyName, this.resumeSession});
+  const OfflineConnectionScreen({
+    super.key, 
+    required this.role, 
+    required this.nickName, 
+    required this.lobbyName, 
+    this.resumeSession
+  });
+
   final ConnectionRole role;
   final String nickName;
   final String lobbyName;
@@ -299,6 +368,23 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   final ValueNotifier<int?> _displayNextZone = ValueNotifier(null);
   final Players _displayPlayers = Players();
 
+  // Replay exchange
+  bool _collectingReplays = false;
+  bool _distributingReplay = false;
+  bool _replayExchangeActive = false; // non-host has pressed Send
+  bool _individualReplaySent = false;
+  bool _assembledReplayReceived = false;
+  final Map<String, Map<String, dynamic>> _collectedReplays = {};
+  Map<String, dynamic>? _offlineAssembledReplayJson;
+  final Set<String> _distributedTo = {};
+  final Map<String, String> _replayConnectedNames = {}; // { endpointId: userName }
+  bool _replayAdvertising = false;
+
+  // Chunking
+  static const int _maxChunkSize = 32000;
+  final Map<String, Map<int, String>> _chunkBuffers = {};
+  final Map<String, int> _chunkTotals = {};
+
   // Gets
   bool get isHost => widget.role == ConnectionRole.host;
   bool get amHost => isHost || _isPseudoHost;
@@ -356,7 +442,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   void _initFromSession(OfflineGameSession session) {
     userName = session.playerName;
     displayName = session.displayName;
-    _lobbyName = '';
+    _lobbyName = session.lobbyName;;
     _inLobby = true;
     _gameStarted = true;
     _gameStartedAt = DateTime.fromMillisecondsSinceEpoch(session.gameStartedAt!);
@@ -433,6 +519,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _playersScrollController.dispose();
     _closureMinutesController.dispose();
     _gracePeriodController.dispose();
+    _replayConnectedNames.clear();
     super.dispose();
   }
 
@@ -533,6 +620,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       role: _myRole,
       gameStarted: _gameStarted,
       gameStartedAt: _gameStartedAt?.millisecondsSinceEpoch,
+      lobbyName: _lobbyName,
       faceOrder: _activeFaceOrder,
       closureIntervalMs: _activeClosureIntervalMs,
       gracePeriodMs: _activeGracePeriodMs,
@@ -576,7 +664,9 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       'closureIntervalMs': _activeClosureIntervalMs,
       'gracePeriodMs': _activeGracePeriodMs,
     };
-    _flood(Cmd.gameMap(mapPayload));
+    final mapCmd = Cmd.gameMap(mapPayload);
+    _addLog('Map command size: ${mapCmd.length} bytes');
+    _floodChunked(mapCmd);
     _addLog('Map sent to ${_players.length - 1} players, waiting for confirmations...');
 
     _checkMapConfirmations();
@@ -680,55 +770,6 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _addLog('Game ended');
   }
 
-  Future<void> _assembleAndSaveReplay() async {
-    if (_receivedMap == null) {
-      _addLog('ERROR: No map data for replay assembly');
-      return;
-    }
-
-    final Map<int, double> zoneClosings = {};
-    for (int i = 0; i < _activeFaceOrder.length; i++) {
-      final closingTimeMs = _activeGracePeriodMs + ((i + 1) * _activeClosureIntervalMs);
-      zoneClosings[_activeFaceOrder[i]] = closingTimeMs / 1000.0;
-    }
-
-    final List<Replay> replays = [];
-    if (_replay != null) replays.add(_replay!);
-
-    _addLog('Assembling replay with ${replays.length} player(s)...');
-
-    try {
-      final replayFile = await ReplayFile.create(
-        map: _receivedMap!,
-        replays: replays,
-        zoneClosings: zoneClosings,
-      );
-      await replayFile.saveReplayFile();
-      _addLog('Replay saved: ${replayFile.replayName}');
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Replay saved: ${replayFile.replayName}')),
-        );
-      }
-    } catch (e) {
-      _addLog('ERROR: Failed to save replay: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to save replay')),
-        );
-      }
-    }
-  }
-
-  Future<void> _leaveAndAssembleReplay() async {
-    await _assembleAndSaveReplay();
-    await OfflineGameSession.clear();
-    if (mounted) {
-      Navigator.popUntil(context, (route) => route.isFirst);
-    }
-  }
-
   // --------------------------------------------------------------------------
   //  Caught button
   // --------------------------------------------------------------------------
@@ -752,7 +793,15 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     final String content;
 
     if (_gameFinished) {
-      return true;
+      if (isHost && _offlineAssembledReplayJson != null) return true;
+      if (!isHost && _assembledReplayReceived) return true;
+      if (!isHost && !_replayExchangeActive) return true; // haven't started, just leave
+      title = 'Leave game?';
+      content = isHost
+        ? 'Replay exchange is in progress.'
+        : _individualReplaySent
+            ? 'You have not received the assembled replay yet.'
+            : 'Your replay has not been sent yet.';
     } else if (_gameStarted) {
       title = 'Leave game?';
       content = 'Your game progress will be saved. You can resume from the main menu.';
@@ -830,12 +879,88 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _sendBytes(endpointId, message);
   }
 
+  String _generateTransferId() {
+     return '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(10000)}';
+  }
+
+  void _sendChunked(String endpointId, String message) {
+    if (message.length <= _maxChunkSize) {
+      _sendBytes(endpointId, message);
+      return;
+    }
+
+    final transferId = _generateTransferId();
+    final total = (message.length / _maxChunkSize).ceil();
+    _addLog('Sending chunked: ${message.length} bytes in $total chunks');
+
+    for (int i = 0; i < total; i++) {
+      final start = i * _maxChunkSize;
+      final end = min(start + _maxChunkSize, message.length);
+      _sendBytes(endpointId, Cmd.chunk(transferId, i, total, false, message.substring(start, end)));
+    }
+  }
+
+
+  void _floodChunked(String message, {String? excludeEndpointId}) {
+    if (message.length <= _maxChunkSize) {
+      _flood(message, excludeEndpointId: excludeEndpointId);
+      return;
+    }
+
+    final transferId = _generateTransferId();
+    final total = (message.length / _maxChunkSize).ceil();
+    _addLog('Flooding chunked: ${message.length} bytes in $total chunks');
+
+    for (int i = 0; i < total; i++) {
+      final start = i * _maxChunkSize;
+      final end = min(start + _maxChunkSize, message.length);
+      _flood(Cmd.chunk(transferId, i, total, true, message.substring(start, end)), excludeEndpointId: excludeEndpointId);
+    }
+  }
+
+  String? _handleChunkReceived(String transferId, int index, int total, String data) {
+    _chunkBuffers.putIfAbsent(transferId, () => {});
+    _chunkTotals[transferId] = total;
+    _chunkBuffers[transferId]![index] = data;
+
+    if (_chunkBuffers[transferId]!.length >= total) {
+      final sorted = List.generate(total, (i) => _chunkBuffers[transferId]![i]!);
+      final fullMessage = sorted.join();
+      _chunkBuffers.remove(transferId);
+      _chunkTotals.remove(transferId);
+      _addLog('Chunk reassembly complete: ${fullMessage.length} bytes from $total chunks');
+      return fullMessage;
+    }
+    return null;
+  }
+
   // --------------------------------------------------------------------------
   // Incoming Bytes
   // --------------------------------------------------------------------------
 
   void _onBytesReceived(String endpointId, Uint8List bytes) {
     final message = String.fromCharCodes(bytes);
+
+    if (Cmd.isChunk(message)) {
+      final (transferId, index, total, flood, data) = Cmd.parseChunk(message);
+
+      if (flood) {
+        _flood(message, excludeEndpointId: endpointId);
+      }
+
+      final complete = _handleChunkReceived(transferId, index, total, data);
+      if (complete != null) {
+        // Flooded chunks were already forwarded, so pass no fromEndpointId
+        // to prevent re-flooding the reassembled message
+        if (flood) {
+          _processMessage(complete);
+        } else {
+          _processMessage(complete, fromEndpointId: endpointId);
+        }
+      }
+      return;
+    }
+
     print('[$userName] recv from $endpointId: $message');
 
     if (Cmd.isRelay(message)) {
@@ -1525,6 +1650,339 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   }
 
   // --------------------------------------------------------------------------
+  //  Replay Exchange, Connections
+  // --------------------------------------------------------------------------
+
+  void _replayOnConnectionInit(String id, ConnectionInfo info) {
+    print('[$userName] replay onConnectionInit id=$id name=${info.endpointName}');
+
+    Nearby().acceptConnection(
+      id,
+      onPayLoadRecieved: (endpointId, payload) async {
+        if (payload.type == PayloadType.BYTES && payload.bytes != null) {
+          _replayOnBytesReceived(endpointId, payload.bytes!);
+        }
+      },
+      onPayloadTransferUpdate: (_, __) {},
+    );
+  }
+
+  void _replayOnConnectionResult(String id, Status status) {
+    _addLog('Replay exchange connection result $id: $status');
+
+    if (status != Status.CONNECTED) {
+      _replayConnectedNames.remove(id);
+      return;
+    }
+
+    // Exchange identity
+    _sendBytes(id, Cmd.username(userName, displayName));
+
+    // Non-host: if connected during collection phase, send replay
+    if (!isHost && _replayExchangeActive && !_individualReplaySent && _replay != null) {
+      // Wait briefly for username exchange then send
+      Future.delayed(const Duration(milliseconds: 300), () {
+        final msg = Cmd.replayData(userName, _replay!.toJson());
+        _addLog('Replay data size: ${msg.length} bytes');
+        _sendChunked(id, msg);
+        _addLog('Sending replay to host...');
+      });
+    }
+  }
+
+  void _replayOnDisconnected(String id) {
+    final name = _replayConnectedNames.remove(id) ?? id;
+    _addLog('Replay exchange disconnected: $name');
+    _replayCheckReAdvertise();
+  }
+
+  void _replayOnBytesReceived(String endpointId, Uint8List bytes) {
+    final message = String.fromCharCodes(bytes);
+
+    if (Cmd.isChunk(message)) {
+      final (transferId, index, total, _, data) = Cmd.parseChunk(message);
+      final complete = _handleChunkReceived(transferId, index, total, data);
+      if (complete != null) {
+        _replayOnBytesReceived(endpointId, Uint8List.fromList(complete.codeUnits));
+      }
+      return;
+    }
+
+    if (Cmd.isUsername(message)) {
+      final (user, display) = Cmd.parseUsername(message);
+      _replayConnectedNames[endpointId] = user;
+      _addLog('Replay exchange: $display ($user) identified');
+
+      // Host in distribution phase: send assembled file immediately
+      if (isHost && _distributingReplay && _offlineAssembledReplayJson != null) {
+        if (!_distributedTo.contains(user)) {
+          _addLog('Sending assembled replay to $display...');
+          _sendChunked(endpointId, Cmd.replayFileData(_offlineAssembledReplayJson!));
+        } else {
+          // Already distributed, disconnect
+          _addLog('$display already has the replay, disconnecting');
+          Future.delayed(const Duration(milliseconds: 200), () {
+            Nearby().disconnectFromEndpoint(endpointId);
+          });
+        }
+      }
+      return;
+    }
+
+    if (Cmd.isReplayData(message) && isHost && _collectingReplays) {
+      final parsed = Cmd.parseReplayData(message);
+      final senderName = parsed['userName'] as String;
+      final replayJson = parsed['replay'] as Map<String, dynamic>;
+
+      setState(() => _collectedReplays[senderName] = replayJson);
+      _addLog('Received replay from $senderName (${_collectedReplays.length + 1}/${_players.length})');
+
+      // Ack and disconnect
+      _sendBytes(endpointId, Cmd.replayAck(userName));
+      Future.delayed(const Duration(milliseconds: 300), () {
+        Nearby().disconnectFromEndpoint(endpointId);
+      });
+
+      // +1 for host's own replay
+      if (_collectedReplays.length + 1 >= _players.length) {
+        _addLog('All replays collected!');
+        _assembleAndDistributeOffline();
+      }
+      return;
+    }
+
+    if (Cmd.isReplayAck(message) && !isHost) {
+      setState(() => _individualReplaySent = true);
+      _addLog('Host acknowledged replay receipt');
+
+      // Disconnect, then rediscover for distribution phase
+      Future.delayed(const Duration(milliseconds: 300), () {
+        Nearby().disconnectFromEndpoint(endpointId);
+      });
+
+      // Wait then start discovering again for the distribution phase
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted && !_assembledReplayReceived) {
+          _addLog('Rediscovering for distribution phase...');
+          _startReplayDiscovery();
+        }
+      });
+      return;
+    }
+
+    if (Cmd.isReplayFileData(message) && !isHost) {
+      final replayFileJson = Cmd.parseReplayFileData(message);
+      _addLog('Received assembled replay file');
+
+      // Ack
+      _sendBytes(endpointId, Cmd.replayFileAck(userName));
+
+      // Save
+      _saveReceivedOfflineReplayFile(replayFileJson);
+
+      Future.delayed(const Duration(milliseconds: 300), () {
+        Nearby().disconnectFromEndpoint(endpointId);
+        Nearby().stopDiscovery();
+        setState(() => _isDiscovering = false);
+      });
+      return;
+    }
+
+    if (Cmd.isReplayFileAck(message) && isHost && _distributingReplay) {
+      final senderName = _replayConnectedNames[endpointId] ?? 'unknown';
+      setState(() => _distributedTo.add(senderName));
+      _addLog('$senderName confirmed replay receipt (${_distributedTo.length}/${_players.length - 1})');
+
+      Future.delayed(const Duration(milliseconds: 200), () {
+        Nearby().disconnectFromEndpoint(endpointId);
+      });
+
+      // Check if all non-hosts received it
+      if (_distributedTo.length >= _players.length - 1) {
+        _addLog('All players received the assembled replay');
+        _stopReplayAdvertising();
+      }
+      return;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  //  Replay Exchange, Logic
+  // --------------------------------------------------------------------------
+
+  Future<void> _startCollecting() async {
+    // Add host's own replay
+    if (_replay != null) {
+      _collectedReplays[userName] = _replay!.toJson();
+    }
+
+    setState(() => _collectingReplays = true);
+
+    // Check if host already has all replays
+    if (_collectedReplays.length >= _players.length) {
+      _assembleAndDistributeOffline();
+      return;
+    }
+
+    await _startReplayAdvertising('COLLECT:$_lobbyName');
+    _addLog('Collecting replays... advertising as COLLECT:$_lobbyName');
+  }
+
+  Future<void> _assembleAndDistributeOffline() async {
+    _addLog('Assembling replay...');
+    await _stopReplayAdvertising();
+
+    if (_receivedMap == null) {
+      _addLog('ERROR: No map data for replay assembly');
+      return;
+    }
+
+    final Map<int, double> zoneClosings = {};
+    for (int i = 0; i < _activeFaceOrder.length; i++) {
+      final closingTimeMs = _activeGracePeriodMs + ((i + 1) * _activeClosureIntervalMs);
+      zoneClosings[_activeFaceOrder[i]] = closingTimeMs / 1000.0;
+    }
+
+    final List<Replay> replays = [];
+    for (final entry in _collectedReplays.entries) {
+      try {
+        replays.add(Replay.fromJson(entry.value));
+      } catch (e) {
+        _addLog('WARNING: Failed to parse replay from ${entry.key}: $e');
+      }
+    }
+
+    try {
+      final replayFile = await ReplayFile.create(
+        map: _receivedMap!,
+        replays: replays,
+        zoneClosings: zoneClosings,
+      );
+      await replayFile.saveReplayFile();
+      await _receivedMap!.saveMapFile();
+      _offlineAssembledReplayJson = replayFile.toJson();
+      _addLog('Replay assembled and saved: ${replayFile.replayName}');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Replay saved: ${replayFile.replayName}')),
+        );
+      }
+    } catch (e) {
+      _addLog('ERROR: Failed to assemble replay: $e');
+      return;
+    }
+
+    // Start distributing
+    _startDistributing();
+  }
+
+  Future<void> _sendAssembledNow() async {
+    await _stopReplayAdvertising();
+    await _assembleAndDistributeOffline();
+  }
+
+  Future<void> _startDistributing() async {
+    setState(() {
+      _collectingReplays = false;
+      _distributingReplay = true;
+    });
+
+    // If only host is playing, no one to distribute to
+    if (_players.length <= 1) {
+      _addLog('No other players to distribute to');
+      setState(() => _distributingReplay = false);
+      return;
+    }
+
+    await _startReplayAdvertising('DISTRIBUTE:$_lobbyName');
+    _addLog('Distributing replay... advertising as DISTRIBUTE:$_lobbyName');
+  }
+
+  void _startReplayExchange() {
+    setState(() => _replayExchangeActive = true);
+    _startReplayDiscovery();
+    _addLog('Looking for host...');
+  }
+
+  Future<void> _startReplayDiscovery() async {
+    try {
+      await Nearby().stopDiscovery();
+      final a = await Nearby().startDiscovery(
+        userName,
+        strategy,
+        onEndpointFound: (id, name, serviceId) {
+          // Only connect to our lobby's collection or distribution
+          if (name == 'COLLECT:$_lobbyName' || name == 'DISTRIBUTE:$_lobbyName') {
+            _addLog('Found host: $name');
+            Nearby().stopDiscovery();
+            setState(() => _isDiscovering = false);
+            Nearby().requestConnection(
+              userName,
+              id,
+              onConnectionInitiated: _replayOnConnectionInit,
+              onConnectionResult: (id, status) => _replayOnConnectionResult(id, status),
+              onDisconnected: (id) => _replayOnDisconnected(id),
+            );
+          }
+        },
+        onEndpointLost: (_) {},
+      );
+      setState(() => _isDiscovering = a);
+    } catch (e) {
+      _addLog('Replay discovery failed: $e');
+    }
+  }
+
+  Future<void> _startReplayAdvertising(String name) async {
+    try {
+      await Nearby().stopAdvertising();
+      final a = await Nearby().startAdvertising(
+        name,
+        strategy,
+        onConnectionInitiated: _replayOnConnectionInit,
+        onConnectionResult: (id, status) => _replayOnConnectionResult(id, status),
+        onDisconnected: (id) => _replayOnDisconnected(id),
+      );
+      setState(() => _replayAdvertising = a);
+      _addLog('Replay advertising: $name');
+    } catch (e) {
+      _addLog('Replay advertising failed: $e');
+    }
+  }
+
+  Future<void> _stopReplayAdvertising() async {
+    await Nearby().stopAdvertising();
+    setState(() => _replayAdvertising = false);
+  }
+
+  void _replayCheckReAdvertise() {
+    if (!_replayAdvertising && (_collectingReplays || _distributingReplay)) {
+      final phase = _collectingReplays ? 'COLLECT' : 'DISTRIBUTE';
+      _startReplayAdvertising('$phase:$_lobbyName');
+    }
+  }
+
+  Future<void> _saveReceivedOfflineReplayFile(Map<String, dynamic> json) async {
+    try {
+      final replayFile = ReplayFile.fromJson(json);
+      await replayFile.saveReplayFile();
+      if (_receivedMap != null) {
+        await _receivedMap!.saveMapFile();
+      }
+      setState(() => _assembledReplayReceived = true);
+      _addLog('Replay saved: ${replayFile.replayName}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Replay saved: ${replayFile.replayName}')),
+        );
+      }
+    } catch (e) {
+      _addLog('ERROR: Failed to save received replay: $e');
+    }
+  }
+
+  // --------------------------------------------------------------------------
   // Pseudo-Host
   // --------------------------------------------------------------------------
 
@@ -2031,21 +2489,47 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   }
 
   Widget _buildActiveTopSection(BuildContext context) {
-    if (_gameFinished) {
+if (_gameFinished) {
       return Column(children: [
         Text('Game Ended',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 color: Colors.amber.shade700, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: FilledButton.icon(
-            icon: const Icon(Icons.save),
-            label: const Text('Leave Game and Assemble Replay'),
-            onPressed: _leaveAndAssembleReplay,
-          ),
-        ),
+        if (isHost) ...[
+          if (!_collectingReplays && !_distributingReplay && _offlineAssembledReplayJson == null)
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.download),
+                label: const Text('Collect and Assemble Replay Data'),
+                onPressed: _startCollecting,
+              ),
+            ),
+          if (_collectingReplays && _collectedReplays.length + 1 < _players.length) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.send),
+                label: const Text('Send Assembled Replay Now'),
+                onPressed: _sendAssembledNow,
+              ),
+            ),
+          ],
+        ] else ...[
+          if (!_replayExchangeActive && !_assembledReplayReceived)
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.upload),
+                label: const Text('Send Replay Data'),
+                onPressed: _startReplayExchange,
+              ),
+            ),
+        ],
       ]);
     }
     return Column(children: [
@@ -2057,7 +2541,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
           style: Theme.of(context).textTheme.bodyMedium),
       const SizedBox(height: 12),
       HoldButton(
-        label: 'End Game (hold)',
+        label: 'Manual End Game (hold)',
         onComplete: _endGame,
         color: Theme.of(context).colorScheme.error,
         backgroundColor: Theme.of(context).colorScheme.errorContainer,
@@ -2442,18 +2926,55 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
     Widget? banner;
     if (_gameFinished) {
+      final String bannerTitle = 'Game Ended';
+      final String bannerSubtitle;
+      final Color bannerColor;
+
+      if (isHost) {
+        if (_distributingReplay && _distributedTo.length >= _players.length - 1) {
+          bannerSubtitle = 'Replay distributed to all players';
+          bannerColor = Colors.green;
+        } else if (_distributingReplay) {
+          bannerSubtitle = 'Distributing replay... (${_distributedTo.length}/${_players.length - 1})';
+          bannerColor = Colors.amber.shade700;
+        } else if (_offlineAssembledReplayJson != null) {
+          bannerSubtitle = 'Replay assembled, starting distribution...';
+          bannerColor = Colors.amber.shade700;
+        } else if (_collectingReplays) {
+          bannerSubtitle = 'Collecting replays... (${_collectedReplays.length}/${_players.length})';
+          bannerColor = Colors.blue;
+        } else {
+          bannerSubtitle = 'Replay ready to collect';
+          bannerColor = Colors.amber.shade700;
+        }
+      } else {
+        if (_assembledReplayReceived) {
+          bannerSubtitle = 'Replay received and saved';
+          bannerColor = Colors.green;
+        } else if (_individualReplaySent) {
+          bannerSubtitle = 'Replay sent, waiting for assembled replay...';
+          bannerColor = Colors.blue;
+        } else if (_replayExchangeActive) {
+          bannerSubtitle = 'Looking for host...';
+          bannerColor = Colors.blue;
+        } else {
+          bannerSubtitle = 'Ready to send replay';
+          bannerColor = Colors.amber.shade700;
+        }
+      }
+
       banner = Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-        color: Colors.amber.shade700,
-        child: const Column(
+        color: bannerColor,
+        child: Column(
           children: [
-            Text('Game Ended',
-                style: TextStyle(
+            Text(bannerTitle,
+                style: const TextStyle(
                     color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-            SizedBox(height: 2),
-            Text('Replay ready to save.',
-                style: TextStyle(color: Colors.white, fontSize: 14)),
+            const SizedBox(height: 2),
+            Text(bannerSubtitle,
+                style: const TextStyle(color: Colors.white, fontSize: 14)),
           ],
         ),
       );
