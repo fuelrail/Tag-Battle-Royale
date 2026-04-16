@@ -87,7 +87,7 @@ class _ExampleGameState extends State<ExampleGame> {
           final point = _latLngToImage(pos);
           _replay.add(point);
           final currentFace = widget.map.graph.pointInFace(point);
-          widget.players.updatePlayerPosition(widget.playerID, point);
+          widget.players.updatePlayerPosition(widget.playerID, point, null);
           widget.players.update();
           _currentZoneNotifier.value = currentFace?.faceID;
         } catch (_){}

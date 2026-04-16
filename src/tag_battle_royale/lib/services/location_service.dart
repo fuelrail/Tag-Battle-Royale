@@ -1,3 +1,4 @@
+import "package:flutter/material.dart";
 import 'dart:async';
 import 'dart:ui' show Offset;
 import 'package:geolocator/geolocator.dart';
@@ -38,7 +39,8 @@ class LocationService {
   // provided by lobby and updates the current zone for displaying
   void Function(int? id)? updateCurrentZone;
   void Function(Offset pos)? updatePlayerPosition;
-
+  void Function(bool inClosedZone)? updateInClosedZone;
+  bool inClosedZone = false;
   /// Called each time a position is sent.
   void Function(Offset position, int? zone, String role)? onFrameRecorded;
 
@@ -208,6 +210,8 @@ class LocationService {
               revealed = zone == null || closedZones.contains(zone);
             }
           }
+
+          if(revealed != inClosedZone){updateInClosedZone?.call(revealed);}
 
           if (_hasSocket && _socketConnected) {
             gameSocketService!.sendLocation(

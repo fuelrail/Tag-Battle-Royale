@@ -325,7 +325,9 @@ class ImageEditorState extends State<ImageEditor> {
         break;
 
       case EditorTool.eraser:
-        _eraseAtPoint(scenePoint);
+        setState((){
+          _eraseAtPoint(scenePoint);
+        });
         break;
 
       case null:
@@ -354,7 +356,9 @@ class ImageEditorState extends State<ImageEditor> {
         break;
 
       case EditorTool.eraser:
-        _eraseAtPoint(scenePoint);
+        setState((){
+          _eraseAtPoint(scenePoint);
+        });
         break;
 
       case null:

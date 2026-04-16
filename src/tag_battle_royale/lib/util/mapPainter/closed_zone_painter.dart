@@ -22,6 +22,41 @@ class ClosedZonePainter extends CustomPainter {
       if(!paintFaces.contains((face.faceID))){continue;}
       final path = Path()..addPolygon(face.polygon, true);
       canvas.drawPath(path, fillPaint);
+
+      final textPainter = TextPainter(
+        textAlign: TextAlign.center,
+        textDirection: TextDirection.ltr,
+      );
+      final text = "Closed";
+
+      // outline first
+      textPainter.text = TextSpan(
+        text: text,
+        style: TextStyle(
+          fontSize: 40,
+          fontWeight: FontWeight.bold,
+          foreground: Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 4
+            ..color = Colors.black,
+        ),
+      );
+      textPainter.layout();
+      final offset = face.centroid - Offset(textPainter.width / 2, textPainter.height / 2);
+      textPainter.paint(canvas, offset);
+
+      // fill on top
+      textPainter.text = TextSpan(
+        text: text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 40,
+          fontWeight: FontWeight.bold,
+        ),
+      );
+
+      textPainter.layout();
+      textPainter.paint(canvas, offset);
     }
   }
 

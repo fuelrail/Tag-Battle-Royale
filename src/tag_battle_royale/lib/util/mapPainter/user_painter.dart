@@ -53,7 +53,7 @@ class UserPainter extends CustomPainter{
 
     final textPainter = TextPainter(
       text: TextSpan(
-        text: player.name,
+        text: player.lastSeen == null ? player.name : "${player.name}\n${player.lastSeen! ~/ 1000}/s ago",
         style: const TextStyle(
           color: Colors.white,
           fontSize: 12,
@@ -70,16 +70,30 @@ class UserPainter extends CustomPainter{
       textDirection: TextDirection.ltr,
     )..layout();
 
-    final textOffset = ui.Offset(
-      player.position!.dx + radius + 6,
-      player.position!.dy - (textPainter.height / 2),
-    );
+    final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+          player.position!.dx + 12,
+          player.position!.dy - 10,
+          textPainter.width + 12,
+          textPainter.height + 6,
+        ),
+        const Radius.circular(8),
+      );
 
-    textPainter.paint(canvas, textOffset);
+      final bgPaint = Paint()
+        ..color = const Color.fromARGB(160, 0, 0, 0)
+        ..style = PaintingStyle.fill;
+
+      canvas.drawRRect(rect, bgPaint);
+
+      textPainter.paint(
+        canvas,
+        ui.Offset(player.position!.dx + 18, player.position!.dy - 7),
+      );
   }
 
   @override
   bool shouldRepaint(covariant UserPainter oldDelegate){
-    return oldDelegate.showLabel != showLabel;
+    return true;
   }
 }

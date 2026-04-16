@@ -355,6 +355,9 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   Timer? _graceTimer;
   int _graceSecondsRemaining = 0;
 
+  // Display zone close
+  Timer? _bannerTimer;
+
   // Location and replay
   LocationService? _location;
   Replay? _replay;
@@ -496,6 +499,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _location!.getClosedZones = () => _closedZones;
     _location!.onFrameRecorded = _onFrameRecorded;
     _startGraceCountdown();
+    _startBannerTimer();
 
     if (_receivedMap != null) {
       _location!.startTracking();
@@ -509,6 +513,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     Nearby().stopDiscovery();
     Nearby().stopAllEndpoints();
     _graceTimer?.cancel();
+    _bannerTimer?.cancel();
     _confettiController.dispose();
     _location?.onLog = null;
     _location?.onFrameRecorded = null;
@@ -570,6 +575,24 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     });
   }
 
+  // timer to display when zones will close
+  void _startBannerTimer() {
+    _bannerTimer?.cancel();
+    _bannerTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || !_gameStarted || _gameFinished) {
+        _bannerTimer?.cancel();
+        _bannerTimer = null;
+        return;
+      }
+      setState(() {});
+    });
+  }
+
+  void _stopBannerTimer() {
+    _bannerTimer?.cancel();
+    _bannerTimer = null;
+  }
+
   // --------------------------------------------------------------------------
   //  Replay persistence
   // --------------------------------------------------------------------------
@@ -578,7 +601,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _replay?.add(position, zone: zone, role: role);
     _displayCurrentZone.value = zone;
     _displayClosedZones.value = _closedZones;
-    _displayPlayers.updatePlayerPosition(userName, position);
+    _displayPlayers.updatePlayerPosition(userName, position, null);
     final closedZoneLength = _closedZones.length;
     _displayNextZone.value = closedZoneLength < _activeFaceOrder.length ? _activeFaceOrder[closedZoneLength] : null;
     _persistReplay();
@@ -731,6 +754,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
     _startReplay();
     _startGraceCountdown();
+    _startBannerTimer();
 
     if (_receivedMap != null) {
       _location!.startTracking();
@@ -763,6 +787,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     if (confirmed != true) return;
 
     _location?.stopTracking();
+    _stopBannerTimer();
     await _persistReplay();
 
     setState(() => _gameFinished = true);
@@ -2543,9 +2568,10 @@ if (_gameFinished) {
       HoldButton(
         label: 'Manual End Game (hold)',
         onComplete: _endGame,
-        color: Theme.of(context).colorScheme.error,
-        backgroundColor: Theme.of(context).colorScheme.errorContainer,
-        textColor: Theme.of(context).colorScheme.onErrorContainer,
+        color: Theme.of(context).colorScheme.onPrimary,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        textColor: Theme.of(context).colorScheme.onPrimary,
+        holdDuration: Duration(seconds: 2),
       ),
     ]);
   }
@@ -2890,9 +2916,10 @@ if (_gameFinished) {
                 label: "I've been caught (hold)",
                 enabled: showCaughtButton,
                 onComplete: _onCaught,
-                color: Theme.of(context).colorScheme.error,
-                backgroundColor: Theme.of(context).colorScheme.errorContainer,
-                textColor: Theme.of(context).colorScheme.onErrorContainer,
+                color: Theme.of(context).colorScheme.onPrimary,
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                textColor: Theme.of(context).colorScheme.onPrimary,
+                holdDuration: Duration(seconds: 2),
                 padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
               ),
             ),
@@ -2990,6 +3017,8 @@ if (_gameFinished) {
         graceSecondsRemaining: _graceSecondsRemaining,
         myRole: _myRole,
         pendingPlayersCount: 0,
+        zoneClosePeriod: _closureMinutes,
+        currentTime: _gameStartedAt != null ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs : null,
       );
     } else if (!_gameStarted && isHost && _pendingGamePlayers.isNotEmpty) {
       banner = GameBanner(
@@ -3003,6 +3032,8 @@ if (_gameFinished) {
         graceSecondsRemaining: 0,
         myRole: _myRole,
         pendingPlayersCount: _pendingGamePlayers.length,
+        zoneClosePeriod: _closureMinutes,
+        currentTime: _gameStartedAt != null ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs : null,
       );
     }
 

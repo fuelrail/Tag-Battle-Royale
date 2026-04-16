@@ -6,6 +6,7 @@ class Player {
     required this.id,
     required this.name,
     required this.colour,
+    this.lastSeen,
     this.position,
   });
 
@@ -13,6 +14,7 @@ class Player {
   final String name;
   Color colour;
   ui.Offset? position;
+  int? lastSeen;
 
   void updateColour(Color colour){
     this.colour = colour;
@@ -30,31 +32,20 @@ class Players extends ChangeNotifier {
     _playersById[player.id] = player;
   }
 
-  void updatePlayerPosition(String id, ui.Offset? position){
+  void updatePlayerPosition(String id, ui.Offset? position, int? age){
     final player = _playersById[id];
     if(player == null) return;
 
     if(player.position == position) return;
 
     player.position = position;
+    player.lastSeen = age;
   }
 
-  void updatePlayerPositions(Map<String, ui.Offset> updates){
-    bool changed = false;
-
-    for(final entry in updates.entries){
-      final player = _playersById[entry.key];
-      if(player == null) continue;
-
-      if(player.position != entry.value){
-        player.position = entry.value;
-        changed = true;
-      }
-    }
-
-    if(changed){
-      notifyListeners();
-    }
+  void incrementPlayerAge(String id, int time){
+    final player = _playersById[id];
+    if(player == null || player.lastSeen == null){return;}
+    player.lastSeen = player.lastSeen! + time;
   }
 
   void update(){
