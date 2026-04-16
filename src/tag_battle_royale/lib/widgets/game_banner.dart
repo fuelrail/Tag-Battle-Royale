@@ -17,6 +17,7 @@ class GameBanner extends StatelessWidget {
     required this.currentTime,
     required this.zoneClosePeriod,
     this.inBadZone = false,
+    this.isOnline = true,
     this.replayFileAssembled = false,
     this.replayFileSentToServer = false,
   });
@@ -33,6 +34,7 @@ class GameBanner extends StatelessWidget {
   final String myRole;
   final int pendingPlayersCount;
   final bool inBadZone;
+  final bool isOnline;
   final int zoneClosePeriod;
   final int? currentTime;
 
@@ -113,9 +115,11 @@ class GameBanner extends StatelessWidget {
     if(inBadZone && duringGame){
       if(isRunner){
         return _banner(
-          color: Colors.blue,
+          color: Colors.red,
           title: 'Turn Back!',
-          subtitle: 'You are not in an open zone\nThe Chasers can now see you',
+          subtitle: isOnline
+              ? 'You are not in an open zone\nThe Chasers can now see you'
+              : 'You are not in an open zone',
         );
       }
     }
@@ -130,7 +134,7 @@ class GameBanner extends StatelessWidget {
       final timeStr = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
 
       return _banner(
-        color: isRunner ? Colors.blue : Colors.red,
+        color: Colors.blue,
         title: 'Time till next zone closing:',
         subtitle:  timeStr,
       );

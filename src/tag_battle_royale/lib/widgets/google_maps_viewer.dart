@@ -145,6 +145,7 @@ class GoogleMapsState extends State<GoogleMaps> {
             myLocationEnabled: _showUserLocation,
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,
+            rotateGesturesEnabled: false,
             onCameraMove: (pos){setState(() => _userPosition = pos);},
             onMapCreated: (GoogleMapController controller){
               if(!_controller.isCompleted){_controller.complete(controller);}

@@ -297,7 +297,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   late final String userName;
   late final String displayName; // nickName if provided, otherwise userName
   final Strategy strategy = Strategy.P2P_CLUSTER;
-  final int maxConnections = 1;
+  final int maxConnections = 3;
 
   // Network
   Map<String, ConnectionInfo> endpointMap = {}; // { endpointId: ConnectionInfo }
@@ -327,6 +327,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   final List<String> _log = [];
   bool _pendingAcceptance = false; // joiner waiting for host acceptance
   bool _inLobby = false; // joiner accepted into lobby
+  double? _finalElapsedSeconds;
 
   // Map & config
   MapFile? _selectedMap;
@@ -357,6 +358,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
   // Display zone close
   Timer? _bannerTimer;
+  bool _inBadZone = false;
 
   // Location and replay
   LocationService? _location;
@@ -485,10 +487,11 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       ));
     }
 
+    final me = _players.where((p) => p.id == userName).firstOrNull;
     _displayPlayers.addPlayer(Player(
       id: userName,
       name: displayName,
-      colour: session.role == 'chaser' ? Colors.red : Colors.black,
+      colour: me?.nameColour ?? Colors.black,
     ));
 
     // Start location tracking
@@ -497,6 +500,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _location!.map = _receivedMap;
     _location!.role = session.role;
     _location!.getClosedZones = () => _closedZones;
+    _location!.updateInClosedZone = _updateInBadZone;
     _location!.onFrameRecorded = _onFrameRecorded;
     _startGraceCountdown();
     _startBannerTimer();
@@ -605,6 +609,10 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     final closedZoneLength = _closedZones.length;
     _displayNextZone.value = closedZoneLength < _activeFaceOrder.length ? _activeFaceOrder[closedZoneLength] : null;
     _persistReplay();
+  }
+
+  void _updateInBadZone(bool isInBadZone) {
+    setState(() => _inBadZone = isInBadZone);
   }
 
   Future<void> _persistReplay() async {
@@ -751,6 +759,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _location!.map = _receivedMap;
     _location!.role = _myRole;
     _location!.getClosedZones = () => _closedZones;
+    _location!.updateInClosedZone = _updateInBadZone;
 
     _startReplay();
     _startGraceCountdown();
@@ -789,6 +798,10 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _location?.stopTracking();
     _stopBannerTimer();
     await _persistReplay();
+
+    if (_gameStartedAt != null) {
+      _finalElapsedSeconds = DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0;
+    }
 
     setState(() => _gameFinished = true);
     _confettiController.play();
@@ -1768,8 +1781,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
         Nearby().disconnectFromEndpoint(endpointId);
       });
 
-      // +1 for host's own replay
-      if (_collectedReplays.length + 1 >= _players.length) {
+      if (_collectedReplays.length >= _players.length) {
         _addLog('All replays collected!');
         _assembleAndDistributeOffline();
       }
@@ -1886,6 +1898,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       await replayFile.saveReplayFile();
       await _receivedMap!.saveMapFile();
       _offlineAssembledReplayJson = replayFile.toJson();
+      _extractCaughtDataFromReplays(replays);
       _addLog('Replay assembled and saved: ${replayFile.replayName}');
 
       if (mounted) {
@@ -1991,6 +2004,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   Future<void> _saveReceivedOfflineReplayFile(Map<String, dynamic> json) async {
     try {
       final replayFile = ReplayFile.fromJson(json);
+      _extractCaughtDataFromReplays(replayFile.replays);
       await replayFile.saveReplayFile();
       if (_receivedMap != null) {
         await _receivedMap!.saveMapFile();
@@ -2005,6 +2019,35 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     } catch (e) {
       _addLog('ERROR: Failed to save received replay: $e');
     }
+  }
+
+  void _extractCaughtDataFromReplays(List<Replay> replays) {
+    final Map<String, double> caughtTimes = {};
+
+    for (final replay in replays) {
+      String? prevRole;
+      for (final frame in replay.positions) {
+        if (prevRole == 'runner' && frame.role == 'chaser') {
+          caughtTimes[replay.playerID] = frame.time;
+          break;
+        }
+        prevRole = frame.role;
+      }
+    }
+
+    // Sort by caught time to determine order
+    final sorted = caughtTimes.entries.toList()
+      ..sort((a, b) => a.value.compareTo(b.value));
+
+    setState(() {
+      for (int i = 0; i < sorted.length; i++) {
+        final player = _players.where((p) => p.id == sorted[i].key).firstOrNull;
+        if (player != null) {
+          player.caughtOrder = i + 1;
+          player.caughtAtSeconds = sorted[i].value;
+        }
+      }
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -2142,6 +2185,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
   /// User tapped a lobby in the list.
   void _joinLobby(DiscoveredEndpoint endpoint) {
+    _lobbyName = endpoint.name;
     _addLog("Requesting to join '${endpoint.name}'…");
     Nearby().requestConnection(
       userName, // the advertiser sees this as our endpointName
@@ -2271,6 +2315,13 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
     //  Joiner: lost connection to parent, restart discovery
     if (!amHost && id == _parentEndpointId) {
+      if (_gameStarted || _receivedMap != null) {
+        _addLog("Parent disconnected (game active, ignoring)");
+        setState(() {
+          _parentEndpointId = null;
+        });
+        return;
+      }
       _addLog("Lost connection to host, restarting discovery");
       setState(() {
         _parentEndpointId = null;
@@ -2514,11 +2565,19 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   }
 
   Widget _buildActiveTopSection(BuildContext context) {
-if (_gameFinished) {
+    if (_gameFinished) {
       return Column(children: [
         Text('Game Ended',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 color: Colors.amber.shade700, fontWeight: FontWeight.bold)),
+        if (_finalElapsedSeconds != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Duration: ${formatGameTime(_finalElapsedSeconds!)}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+        ],
         const SizedBox(height: 12),
         if (isHost) ...[
           if (!_collectingReplays && !_distributingReplay && _offlineAssembledReplayJson == null)
@@ -2564,6 +2623,14 @@ if (_gameFinished) {
       const SizedBox(height: 4),
       Text('Role: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}',
           style: Theme.of(context).textTheme.bodyMedium),
+      if (_gameStartedAt != null) ...[
+        const SizedBox(height: 4),
+        Text(
+          'Time: ${formatGameTime(DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0)}',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
+        ),
+      ],
       const SizedBox(height: 12),
       HoldButton(
         label: 'Manual End Game (hold)',
@@ -2715,11 +2782,126 @@ if (_gameFinished) {
 
   Widget _buildPlayersSubTab() {
     final totalItems = _players.length + (isHost ? _pendingGamePlayers.length : 0);
-
     if (totalItems == 0) {
       return const Center(
           child: Text('No players yet', style: TextStyle(color: Colors.grey)));
     }
+    if (_gameFinished && (_offlineAssembledReplayJson != null || _assembledReplayReceived)) {
+      return _buildFinishedPlayerList();
+    }
+    return _buildActivePlayerList();
+  }
+
+  Widget _buildFinishedPlayerList() {
+    final sorted = List<PlayerData>.from(_players)
+      ..sort((a, b) {
+        if (a.caughtOrder != null && b.caughtOrder != null) {
+          return b.caughtOrder!.compareTo(a.caughtOrder!);
+        }
+        if (a.caughtOrder != null) return -1;
+        if (b.caughtOrder != null) return 1;
+        return 0;
+      });
+
+    String placeLabel(int index) {
+      if (sorted[index].caughtOrder == null) return '';
+      final place = index + 1;
+      if (place == 1) return '1st';
+      if (place == 2) return '2nd';
+      if (place == 3) return '3rd';
+      return '${place}th';
+    }
+
+    return Scrollbar(
+      thumbVisibility: true,
+      controller: _playersScrollController,
+      child: ListView.builder(
+        controller: _playersScrollController,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        itemCount: sorted.length,
+        itemBuilder: (context, i) {
+          final player = sorted[i];
+          final colour = _playerColourMap.putIfAbsent(
+            player.id,
+            () => playerColours[_playerColourMap.length % playerColours.length],
+          );
+          final place = placeLabel(i);
+
+          return Card(
+            margin: const EdgeInsets.only(bottom: 6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 40,
+                    child: Center(
+                      child: Text(
+                        place,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: place == '1st'
+                              ? Colors.amber.shade700
+                              : Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 4,
+                    height: player.caughtAtSeconds != null ? 50 : 40,
+                    decoration: BoxDecoration(
+                      color: colour,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(12),
+                        bottomLeft: Radius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          player.name,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                            color: player.nameColour,
+                          ),
+                        ),
+                        if (player.caughtAtSeconds != null)
+                          Text(
+                            'Caught: ${formatGameTime(player.caughtAtSeconds!)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    player.caughtOrder != null ? 'Caught' : 'Chaser',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildActivePlayerList() {
+    final totalItems = _players.length + (isHost ? _pendingGamePlayers.length : 0);
 
     return ListView.builder(
       controller: _playersScrollController,
@@ -3017,8 +3199,31 @@ if (_gameFinished) {
         graceSecondsRemaining: _graceSecondsRemaining,
         myRole: _myRole,
         pendingPlayersCount: 0,
-        zoneClosePeriod: _closureMinutes,
-        currentTime: _gameStartedAt != null ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs : null,
+        zoneClosePeriod: _activeClosureIntervalMs ~/ 60000,
+        inBadZone: _inBadZone,
+        isOnline: false,
+        currentTime: _gameStartedAt != null 
+          ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs 
+          : null,
+      );
+    } else if (_gameStarted && !_gameFinished) {
+      banner = GameBanner(
+        gameStarted: true,
+        gameFinished: false,
+        isHost: isHost,
+        replaySubmitted: false,
+        receivedReplaysCount: 0,
+        totalPlayersCount: 0,
+        inGracePeriod: false,
+        graceSecondsRemaining: 0,
+        myRole: _myRole,
+        pendingPlayersCount: 0,
+        zoneClosePeriod: _activeClosureIntervalMs ~/ 60000,
+        inBadZone: _inBadZone,
+        isOnline: false,
+        currentTime: _gameStartedAt != null
+          ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs
+          : null,
       );
     } else if (!_gameStarted && isHost && _pendingGamePlayers.isNotEmpty) {
       banner = GameBanner(
@@ -3032,8 +3237,12 @@ if (_gameFinished) {
         graceSecondsRemaining: 0,
         myRole: _myRole,
         pendingPlayersCount: _pendingGamePlayers.length,
-        zoneClosePeriod: _closureMinutes,
-        currentTime: _gameStartedAt != null ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs : null,
+        zoneClosePeriod: _activeClosureIntervalMs ~/ 60000,
+        inBadZone: _inBadZone,
+        isOnline: false,
+        currentTime: _gameStartedAt != null 
+          ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs 
+          : null,
       );
     }
 
@@ -3054,26 +3263,34 @@ if (_gameFinished) {
       child: LobbyLayout(
         key: _lobbyKey,
         title: _gameFinished
-            ? const Text('Game Ended')
-            : _gameStarted
-                ? Text.rich(TextSpan(children: [
-                    TextSpan(text: '$displayName: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}'),
-                  ]))
-                : _inLobby
-                    ? Text.rich(TextSpan(children: [
-                        TextSpan(text: '$displayName: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}'),
-                        if (isHost)
-                          TextSpan(
-                            text: ' (host)',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
+          ? const Text('Game Ended')
+          : _gameStarted
+              ? Text.rich(TextSpan(children: [
+                  TextSpan(text: '$displayName: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}'),
+                  if (isHost)
+                    TextSpan(
+                      text: ' (host)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ]))
+              : _inLobby
+                  ? Text.rich(TextSpan(children: [
+                      TextSpan(text: '$displayName: ${_myRole == 'chaser' ? 'Chaser' : 'Runner'}'),
+                      if (isHost)
+                        TextSpan(
+                          text: ' (host)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
-                      ]))
-                    : Text(_lobbyName.isNotEmpty
-                              ? 'Offline: $_lobbyName'
-                              : 'Offline: Joining'),
+                        ),
+                    ]))
+                  : Text(_lobbyName.isNotEmpty
+                            ? 'Offline: $_lobbyName'
+                            : 'Offline: Joining'),
         isConnected: isConnected,
         players: _players,
         chatMessages: _chatMessages,

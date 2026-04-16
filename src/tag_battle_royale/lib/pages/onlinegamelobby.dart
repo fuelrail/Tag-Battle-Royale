@@ -2173,7 +2173,7 @@ Widget _buildLobbyTopSection(BuildContext context) {
               myRole: _myRole,
               pendingPlayersCount: _pendingPlayers.length,
               inBadZone: _inBadZone,
-              zoneClosePeriod: _closureMinutes,
+              zoneClosePeriod: _activeClosureIntervalMs ~/ 60000,
               currentTime: _gameStartedAt != null ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs : null,
               replayFileAssembled: _replayFileAssembled,
               replayFileSentToServer: _replayFileSentToServer,
