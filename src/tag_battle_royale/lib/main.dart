@@ -496,8 +496,8 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
               maxLength: 12,
               decoration: InputDecoration(
                 labelStyle: Theme.of(context).textTheme.bodyMedium,
-                  labelText: 'User Name',
-                  ),
+                labelText: 'User Name',
+                ),
             ),
 
             if (isOnline) ...[
@@ -506,11 +506,11 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                 controller: _codeCtrl,
                 decoration: InputDecoration(
                     labelStyle: Theme.of(context).textTheme.bodyMedium,
-                    labelText: 'Game Code (join only)',
-                    counterText: ""
+                    labelText: 'Game Code (required for join)',
                     ),
                 textCapitalization: TextCapitalization.characters,
                 maxLength: 6,
+                onChanged: (_) => setState(() {}),
               ),
             ],
 
@@ -531,7 +531,9 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.search),
                 label: const Text('Join'),
-                onPressed: () => _checkPermissionsAndGo(context, ConnectionRole.join),
+                onPressed: isOnline && _codeCtrl.text.trim().length < 6
+                  ? null
+                  : () => _checkPermissionsAndGo(context, ConnectionRole.join),
               ),
             ),
           ]),

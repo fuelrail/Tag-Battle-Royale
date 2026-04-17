@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../util/player_data.dart';
+
+
 class GameBanner extends StatelessWidget {
   const GameBanner({
     super.key,
@@ -15,6 +18,8 @@ class GameBanner extends StatelessWidget {
     required this.myRole,
     required this.pendingPlayersCount,
     required this.currentTime,
+    this.totalZones = 0,
+    this.gameElapsedSeconds,
     required this.zoneClosePeriod,
     this.inBadZone = false,
     this.isOnline = true,
@@ -37,6 +42,8 @@ class GameBanner extends StatelessWidget {
   final bool isOnline;
   final int zoneClosePeriod;
   final int? currentTime;
+  final int totalZones;
+  final double? gameElapsedSeconds;
 
   final bool replayFileAssembled;
   final bool replayFileSentToServer;
@@ -125,10 +132,19 @@ class GameBanner extends StatelessWidget {
     }
 
     // time till next zone close
-    if (duringGame && currentTime != null){
+    if (duringGame && currentTime != null) {
       final totalPeriodSeconds = zoneClosePeriod * 60;
       final elapsedSeconds = currentTime! ~/ 1000;
-      final remainingSeconds =totalPeriodSeconds - (elapsedSeconds % totalPeriodSeconds);
+
+      if (elapsedSeconds >= totalPeriodSeconds * totalZones) {
+        return _banner(
+          color: Colors.blue,
+          title: 'All zones closed',
+          subtitle: 'Time elapsed: ${formatGameTime(gameElapsedSeconds ?? 0)}',
+        );
+      }
+
+      final remainingSeconds = totalPeriodSeconds - (elapsedSeconds % totalPeriodSeconds);
       final minutes = remainingSeconds ~/ 60;
       final seconds = remainingSeconds % 60;
       final timeStr = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
@@ -136,7 +152,7 @@ class GameBanner extends StatelessWidget {
       return _banner(
         color: Colors.blue,
         title: 'Time till next zone closing:',
-        subtitle:  timeStr,
+        subtitle: timeStr,
       );
     }
 

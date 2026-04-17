@@ -2004,7 +2004,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
             if (_gameStartedAt != null) ...[
               const SizedBox(height: 4),
               Text(
-                'Time: ${formatGameTime(DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0)}',
+                'Time Elapsed: ${formatGameTime(DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0)}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
@@ -2155,7 +2155,7 @@ Widget _buildLobbyTopSection(BuildContext context) {
             closedZonesNotifier: _displayClosedZones,
             currentZoneNotifier: _displayCurrentZone,
             players: _displayPlayers,
-            next: _displayNextZone,
+            next: _myRole == 'chaser' ? _displayNextZone : null,
             onTapScene: isHost ? _selectNextZone : null,
             showPlayerNames: showLabel,
           ),
@@ -2249,6 +2249,10 @@ Widget _buildLobbyTopSection(BuildContext context) {
               inBadZone: _inBadZone,
               zoneClosePeriod: _activeClosureIntervalMs ~/ 60000,
               currentTime: _gameStartedAt != null ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs : null,
+              totalZones: _activeFaceOrder.length,
+              gameElapsedSeconds: _gameStartedAt != null
+                ? DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0
+                : null,
               replayFileAssembled: _replayFileAssembled,
               replayFileSentToServer: _replayFileSentToServer,
             )

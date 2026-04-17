@@ -2651,7 +2651,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       if (_gameStartedAt != null) ...[
         const SizedBox(height: 4),
         Text(
-          'Time: ${formatGameTime(DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0)}',
+          'Time Elapsed: ${formatGameTime(DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0)}',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
@@ -3110,7 +3110,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
           currentZoneNotifier: _displayCurrentZone,
           closedZonesNotifier: _displayClosedZones,
           players: _displayPlayers,
-          next: _displayNextZone,
+          next: _myRole == 'chaser' ? _displayNextZone : null,
         ),
         if (amRunner && !_gameFinished)
           Positioned(
@@ -3230,6 +3230,10 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
         currentTime: _gameStartedAt != null 
           ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs 
           : null,
+        totalZones: _activeFaceOrder.length,
+        gameElapsedSeconds: _gameStartedAt != null
+          ? DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0
+          : null,
       );
     } else if (_gameStarted && !_gameFinished) {
       banner = GameBanner(
@@ -3249,6 +3253,10 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
         currentTime: _gameStartedAt != null
           ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs
           : null,
+        totalZones: _activeFaceOrder.length,
+        gameElapsedSeconds: _gameStartedAt != null
+          ? DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0
+          : null,
       );
     } else if (!_gameStarted && isHost && _pendingGamePlayers.isNotEmpty) {
       banner = GameBanner(
@@ -3267,6 +3275,10 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
         isOnline: false,
         currentTime: _gameStartedAt != null 
           ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs 
+          : null,
+        totalZones: _activeFaceOrder.length,
+        gameElapsedSeconds: _gameStartedAt != null
+          ? DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0
           : null,
       );
     }
