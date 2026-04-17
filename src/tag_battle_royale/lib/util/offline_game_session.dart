@@ -17,12 +17,15 @@ class OfflineGameSession {
   final String role;
   final bool gameStarted;
   final int? gameStartedAt; // milliseconds since epoch
+  final String lobbyName;
   final List<int> faceOrder;
   final int closureIntervalMs;
   final int gracePeriodMs;
   final Map<String, dynamic>? mapJson;
   final Map<String, dynamic>? replayJson;
   final List<Map<String, dynamic>> players;
+  final bool gameFinished;
+  final double? finalElapsedSeconds;
 
   OfflineGameSession({
     required this.playerName,
@@ -31,12 +34,15 @@ class OfflineGameSession {
     required this.role,
     required this.gameStarted,
     this.gameStartedAt,
+    this.lobbyName = '',
     this.faceOrder = const [],
     this.closureIntervalMs = 900000,
     this.gracePeriodMs = 90000,
     this.mapJson,
     this.replayJson,
     this.players = const [],
+    this.gameFinished = false,
+    this.finalElapsedSeconds,
   });
 
   Map<String, dynamic> toJson() => {
@@ -46,12 +52,15 @@ class OfflineGameSession {
         'role': role,
         'gameStarted': gameStarted,
         'gameStartedAt': gameStartedAt,
+        'lobbyName': lobbyName,
         'faceOrder': faceOrder,
         'closureIntervalMs': closureIntervalMs,
         'gracePeriodMs': gracePeriodMs,
         'mapJson': mapJson,
         'replayJson': replayJson,
         'players': players,
+        'gameFinished': gameFinished,
+        'finalElapsedSeconds': finalElapsedSeconds,
       };
 
   factory OfflineGameSession.fromJson(Map<String, dynamic> json) {
@@ -62,6 +71,7 @@ class OfflineGameSession {
       role: json['role'] ?? 'runner',
       gameStarted: json['gameStarted'] ?? false,
       gameStartedAt: json['gameStartedAt'],
+      lobbyName: json['lobbyName'] ?? '',
       faceOrder: (json['faceOrder'] as List?)?.cast<int>() ?? [],
       closureIntervalMs: json['closureIntervalMs'] ?? 900000,
       gracePeriodMs: json['gracePeriodMs'] ?? 90000,
@@ -70,6 +80,8 @@ class OfflineGameSession {
       players: (json['players'] as List?)
         ?.map((p) => Map<String, dynamic>.from(p))
         .toList() ?? [],
+      gameFinished: json['gameFinished'] ?? false,
+      finalElapsedSeconds: (json['finalElapsedSeconds'] as num?)?.toDouble(),
     );
   }
 

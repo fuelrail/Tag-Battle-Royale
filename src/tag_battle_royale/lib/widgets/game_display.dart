@@ -19,7 +19,7 @@ class GameDisplay extends StatefulWidget {
     required this.closedZonesNotifier,
     required this.players,
     this.showPlayerNames = false,
-    required this.next,
+    this.next,
     this.onTapScene,
   });
 
@@ -27,7 +27,7 @@ class GameDisplay extends StatefulWidget {
 
   final ValueNotifier<int?> currentZoneNotifier;
   final ValueNotifier<Set<int>> closedZonesNotifier;
-  final ValueNotifier<int?> next;
+  final ValueNotifier<int?>? next;
   final Players players;
   final Function(ui.Offset)? onTapScene;
   final bool showPlayerNames;

@@ -1,5 +1,14 @@
 import 'package:flutter/material.dart';
 
+
+String formatGameTime(double totalSeconds) {
+  final total = totalSeconds.floor();
+  final h = total ~/ 3600;
+  final m = (total % 3600) ~/ 60;
+  final s = total % 60;
+  return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+}
+
 class PendingPlayer {
   final String socketId;
   final String playerName;
@@ -38,6 +47,7 @@ class PlayerData {
   bool isHost;
   bool connected;
   int? caughtOrder; // order caught 1 = first, null = original chaser or not caught yet
+  double? caughtAtSeconds;
 
   PlayerData({
     required this.id,
@@ -46,12 +56,14 @@ class PlayerData {
     this.isHost = false,
     this.connected = true,
     this.caughtOrder,
+    this.caughtAtSeconds,
   });
 
   ///Host = purple, Chaser = red, Runner = black.
-  Color get nameColour {;
-    if (role == 'runner') return Colors.blue;
-    return Colors.red;
+  Color get nameColour {
+    if (isHost) return Colors.purple;
+    if (role == 'chaser') return Colors.red;
+    return Colors.blue;
   }
 }
 

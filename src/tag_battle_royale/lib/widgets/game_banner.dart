@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../util/player_data.dart';
+
+
 class GameBanner extends StatelessWidget {
   const GameBanner({
     super.key,
@@ -15,8 +18,11 @@ class GameBanner extends StatelessWidget {
     required this.myRole,
     required this.pendingPlayersCount,
     required this.currentTime,
+    this.totalZones = 0,
+    this.gameElapsedSeconds,
     required this.zoneClosePeriod,
     this.inBadZone = false,
+    this.isOnline = true,
     this.replayFileAssembled = false,
     this.replayFileSentToServer = false,
   });
@@ -33,8 +39,11 @@ class GameBanner extends StatelessWidget {
   final String myRole;
   final int pendingPlayersCount;
   final bool inBadZone;
+  final bool isOnline;
   final int zoneClosePeriod;
   final int? currentTime;
+  final int totalZones;
+  final double? gameElapsedSeconds;
 
   final bool replayFileAssembled;
   final bool replayFileSentToServer;
@@ -113,15 +122,17 @@ class GameBanner extends StatelessWidget {
     if(inBadZone && duringGame){
       if(isRunner){
         return _banner(
-          color: Colors.blue,
+          color: Colors.red,
           title: 'Turn Back!',
-          subtitle: 'You are not in an open zone\nThe Chasers can now see you',
+          subtitle: isOnline
+              ? 'You are not in an open zone\nThe Chasers can now see you'
+              : 'You are not in an open zone',
         );
       }
     }
 
     // time till next zone close
-    if (duringGame && currentTime != null){
+    if (duringGame && currentTime != null) {
       final totalPeriodSeconds = zoneClosePeriod * 60;
       final elapsedSeconds = currentTime! ~/ 1000;
       final remainingSeconds = totalPeriodSeconds - (elapsedSeconds % totalPeriodSeconds);
@@ -130,9 +141,9 @@ class GameBanner extends StatelessWidget {
       final timeStr = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
 
       return _banner(
-        color: isRunner ? Colors.blue : Colors.red,
+        color: Colors.blue,
         title: 'Time till next zone closing:',
-        subtitle:  timeStr,
+        subtitle: timeStr,
       );
     }
 

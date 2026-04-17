@@ -66,6 +66,7 @@ class GameSocketService {
   late IO.Socket _socket;
   bool _connected = false;
   bool hasMap = false;
+  bool hasReplay = false;
 
   // Stored information for reconnection
   String? currentGameId;
@@ -283,6 +284,7 @@ class GameSocketService {
       'gameId': currentGameId,
       'playerId': currentPlayerId,
       'hasMap': hasMap,
+      'hasReplay': hasReplay,
     }, ack: (response) {
       final d = Map<String, dynamic>.from(response);
       if (d['ok'] == true) {

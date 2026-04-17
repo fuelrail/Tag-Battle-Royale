@@ -103,8 +103,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   int _activeClosureIntervalMs = 15 * 60 * 1000;
   int _activeGracePeriodMs = 90 * 1000;
   final Map<String, PlayerLocationInfo> _playerLocations = {};
-
-  bool _inBadZone = false;
+  double? _finalElapsedSeconds;
 
   // Grace period
   Timer? _graceTimer;
@@ -112,6 +111,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
   // Display zone close
   Timer? _bannerTimer;
+  bool _inBadZone = false;
 
   // Replay
   Replay? _replay;
@@ -210,8 +210,8 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _gameId = session.gameId;
     _gameStarted = true;
     _gameStartedAt = session.gameStartedAt != null
-        ? DateTime.fromMillisecondsSinceEpoch(session.gameStartedAt!)
-        : null;
+      ? DateTime.fromMillisecondsSinceEpoch(session.gameStartedAt!)
+      : null;
 
     // Restore config
     _activeFaceOrder = session.faceOrder ?? [];
@@ -277,6 +277,29 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _startGraceCountdown();
     _startBannerTimer();
     if (_receivedMap != null) _location?.startTracking();
+
+    // Restore finished state
+    if (session.gameFinished == true) {
+      _gameFinished = true;
+      _finishReason = session.finishReason;
+      _finalElapsedSeconds = session.finalElapsedSeconds;
+      _replaySubmitted = session.replaySubmitted ?? false;
+      _replayFileAssembled = session.replayFileAssembled ?? false;
+      _replayFileSentToServer = session.replayFileSentToServer ?? false;
+      if (_replayFileAssembled) _socket!.hasReplay = true;
+      _location?.stopTracking();
+      _stopBannerTimer();
+    }
+
+    // Restore caughtAtSeconds from saved players
+    if (session.players != null) {
+      for (final p in session.players!) {
+        final player = _players.where((pl) => pl.id == p['id']).firstOrNull;
+        if (player != null && p['caughtAtSeconds'] != null) {
+          player.caughtAtSeconds = (p['caughtAtSeconds'] as num).toDouble();
+        }
+      }
+    }
 
     _addLog('Resumed from saved session (connecting in background...)');
   }
@@ -454,6 +477,9 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       gracePeriodMs: _activeGracePeriodMs,
       mapJson: _receivedMap?.toJson(),
       replayJson: _replay?.toJson(),
+      replaySubmitted: _replaySubmitted,
+      replayFileAssembled: _replayFileAssembled,
+      replayFileSentToServer: _replayFileSentToServer,      
       players: _players.map((p) => {
         'id': p.id,
         'name': p.name,
@@ -461,7 +487,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         'isHost': p.isHost,
         'connected': p.connected,
         'caughtOrder': p.caughtOrder,
+        'caughtAtSeconds': p.caughtAtSeconds,
       }).toList(),
+      gameFinished: _gameFinished,
+      finishReason: _finishReason,
+      finalElapsedSeconds: _finalElapsedSeconds,
     );
   }
 
@@ -571,7 +601,11 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         );
       }
 
-      setState(() => _replayFileAssembled = true);
+      setState(() {
+        _replayFileAssembled = true;
+        _socket!.hasReplay = true;
+      });
+      _saveFullSession();
 
       // Auto send to server
       _sendAssembledReplayToServer();
@@ -594,10 +628,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _addLog('Sending assembled replay to server...');
     _socket!.submitAssembledReplay(_assembledReplayJson!);
     setState(() => _replayFileSentToServer = true);
+    _saveFullSession();
     _addLog('Assembled replay sent to server');
   }
 
   Future<void> _saveReceivedReplayFile(Map<String, dynamic> json) async {
+    if (_replayFileAssembled) return;
     try {
       final replayFile = ReplayFile.fromJson(json);
       await replayFile.saveReplayFile();
@@ -605,7 +641,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       if (_receivedMap != null) {
         await _receivedMap!.saveMapFile();
       }
-      setState(() => _replayFileAssembled = true);
+      setState(() {
+        _replayFileAssembled = true;
+        _socket!.hasReplay = true;
+      });
+      _saveFullSession();
+
       _addLog('Replay saved: ${replayFile.replayName}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -624,6 +665,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     final reason = data['reason']?.toString() ?? 'unknown';
     final serverPlayers = data['players'] as List?;
 
+    if (_gameStartedAt != null) {
+      _finalElapsedSeconds = DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0;
+    }
+
     setState(() {
       _gameFinished = true;
       _finishReason = reason;
@@ -633,6 +678,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _addLog('Game finished: $reason');
     _confettiController.play();
 
+    _saveFullSession();
     _submitReplay();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -985,6 +1031,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
     _socket!.onReplayReceived = (data) {
       if (!mounted) return;
+      if (_replayFileAssembled) return;
       final playerId = data['playerId']?.toString();
       final replayData = data['replay'] as Map<String, dynamic>?;
       if (playerId == null || replayData == null) return;
@@ -1069,14 +1116,21 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     // Preserve existing roles across updates
     final existingRoles = {for (final p in _players) p.id: p.role};
     final existingCaughtOrder = {for (final p in _players) p.id: p.caughtOrder};
+    final existingCaughtAtSeconds = {for (final p in _players) p.id: p.caughtAtSeconds};
 
     _players.clear();
     for (final player in players) {
       final id = player['id']?.toString() ?? '';
       final name = player['name']?.toString() ?? 'Unknown';
-      // Use server role if present, then preserved role, then default
       final role = player['role']?.toString() ?? existingRoles[id] ?? 'runner';
       final caughtOrder = player['caughtOrder'] ?? existingCaughtOrder[id];
+
+      // Compute caughtAtSeconds from server timestamp
+      double? caughtAtSeconds = existingCaughtAtSeconds[id];
+      if (player['caughtAt'] != null && _gameStartedAt != null) {
+        caughtAtSeconds = ((player['caughtAt'] as num) - _gameStartedAt!.millisecondsSinceEpoch) / 1000.0;
+      }
+
       _players.add(PlayerData(
         id: id,
         name: name,
@@ -1084,6 +1138,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         isHost: id == _hostId,
         connected: player['connected'] ?? true,
         caughtOrder: caughtOrder,
+        caughtAtSeconds: caughtAtSeconds,
       ));
     }
     _setUpDisplay();
@@ -1456,7 +1511,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                     ),
                     Container(
                       width: 4,
-                      height: 40,
+                      height: player.caughtAtSeconds != null ? 50 : 40,
                       decoration: BoxDecoration(
                         color: colour,
                         borderRadius: const BorderRadius.only(
@@ -1467,23 +1522,28 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Text(
-                        player.name,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                          color: player.connected ? player.nameColour : Colors.grey,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            player.name,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              color: player.connected ? player.nameColour : Colors.grey,
+                            ),
+                          ),
+                          if (player.caughtAtSeconds != null)
+                            Text(
+                              'Caught: ${formatGameTime(player.caughtAtSeconds!)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                    Text(
-                      player.caughtOrder != null ? 'Caught' : 'Chaser',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
                   ],
                 ),
               ),
@@ -1886,6 +1946,12 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: Colors.amber.shade700, fontWeight: FontWeight.bold),
           ),
+          if (_finalElapsedSeconds != null) ...[
+            const SizedBox(height: 4),
+            Text('Duration: ${formatGameTime(_finalElapsedSeconds!)}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ],
           const SizedBox(height: 4),
           Text('Code: $_gameId',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1940,6 +2006,14 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
               '$countText$disconnectedText',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            if (_gameStartedAt != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Time Elapsed: ${formatGameTime(DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0)}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ],
             if (isHost) ...[
               const SizedBox(height: 12),
               HoldButton(
@@ -2086,7 +2160,7 @@ Widget _buildLobbyTopSection(BuildContext context) {
             closedZonesNotifier: _displayClosedZones,
             currentZoneNotifier: _displayCurrentZone,
             players: _displayPlayers,
-            next: _displayNextZone,
+            next: _myRole == 'chaser' ? _displayNextZone : null,
             onTapScene: isHost ? _selectNextZone : null,
             showPlayerNames: showLabel,
           ),
@@ -2180,6 +2254,10 @@ Widget _buildLobbyTopSection(BuildContext context) {
               inBadZone: _inBadZone,
               zoneClosePeriod: _activeClosureIntervalMs ~/ 60000,
               currentTime: _gameStartedAt != null ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs : null,
+              totalZones: _activeFaceOrder.length,
+              gameElapsedSeconds: _gameStartedAt != null
+                ? DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0
+                : null,
               replayFileAssembled: _replayFileAssembled,
               replayFileSentToServer: _replayFileSentToServer,
             )

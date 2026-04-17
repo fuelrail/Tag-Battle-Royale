@@ -24,7 +24,13 @@ class GameSession {
     int? gracePeriodMs,
     Map<String, dynamic>? mapJson,
     Map<String, dynamic>? replayJson,
+    bool? replaySubmitted,
+    bool? replayFileAssembled,
+    bool? replayFileSentToServer,
     List<Map<String, dynamic>>? players,
+    bool? gameFinished,
+    String? finishReason,
+    double? finalElapsedSeconds,
   }) async {
     final data = {
       'gameId': gameId,
@@ -39,7 +45,13 @@ class GameSession {
       'gracePeriodMs': gracePeriodMs,
       'mapJson': mapJson,
       'replayJson': replayJson,
+      'replaySubmitted': replaySubmitted,
+      'replayFileAssembled': replayFileAssembled,
+      'replayFileSentToServer': replayFileSentToServer,
       'players': players,
+      'gameFinished': gameFinished,
+      'finishReason': finishReason,
+      'finalElapsedSeconds': finalElapsedSeconds,
     };
     final file = await _getFile();
     await file.writeAsString(jsonEncode(data));
@@ -132,7 +144,13 @@ class GameSessionData {
   final int? gracePeriodMs;
   final Map<String, dynamic>? mapJson;
   final Map<String, dynamic>? replayJson;
+  final bool? replaySubmitted;
+  final bool? replayFileAssembled;
+  final bool? replayFileSentToServer;
   final List<Map<String, dynamic>>? players;
+  final bool? gameFinished;
+  final String? finishReason;
+  final double? finalElapsedSeconds;
 
   GameSessionData({
     required this.gameId,
@@ -147,7 +165,13 @@ class GameSessionData {
     this.gracePeriodMs,
     this.mapJson,
     this.replayJson,
+    this.replaySubmitted,
+    this.replayFileAssembled,
+    this.replayFileSentToServer,
     this.players,
+    this.gameFinished,
+    this.finishReason,
+    this.finalElapsedSeconds,
   });
 
   factory GameSessionData.fromJson(Map<String, dynamic> json) {
@@ -164,9 +188,13 @@ class GameSessionData {
       gracePeriodMs: json['gracePeriodMs'],
       mapJson: json['mapJson'] as Map<String, dynamic>?,
       replayJson: json['replayJson'] as Map<String, dynamic>?,
-      players: (json['players'] as List?)
-          ?.map((p) => Map<String, dynamic>.from(p))
-          .toList(),
+      replaySubmitted: json['replaySubmitted'],
+      replayFileAssembled: json['replayFileAssembled'],
+      replayFileSentToServer: json['replayFileSentToServer'],
+      players: (json['players'] as List?)?.map((p) => Map<String, dynamic>.from(p)).toList(),
+      gameFinished: json['gameFinished'],
+      finishReason: json['finishReason'],
+      finalElapsedSeconds: (json['finalElapsedSeconds'] as num?)?.toDouble(),
     );
   }
 }

@@ -211,7 +211,10 @@ class LocationService {
             }
           }
 
-          if(revealed != inClosedZone){updateInClosedZone?.call(revealed);}
+          if(revealed != inClosedZone) {
+            inClosedZone = revealed;
+            updateInClosedZone?.call(revealed);
+          }
 
           if (_hasSocket && _socketConnected) {
             gameSocketService!.sendLocation(

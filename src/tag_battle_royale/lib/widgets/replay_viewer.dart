@@ -149,16 +149,20 @@ class _ReplayViewerState extends State<ReplayViewer> {
     });
   }
 
-  (ui.Offset, String) _getPlayerAtTime(Replay replay, double time){
+  (ui.Offset?, String?) _getPlayerAtTime(Replay replay, double time){
+
+  if(replay.positions.isEmpty){
+    return (null, null);
+  }
 
   if(time <= replay.positions.first.time){
     final first = replay.positions.first;
-    return (first.position, first.role!);
+    return (first.position, first.role);
   }
 
   if(time >= replay.positions.last.time){
     final last = replay.positions.last;
-    return (last.position, last.role!);
+    return (last.position, last.role);
   }
 
   for(int i = 0; i < replay.positions.length - 1; i++){
@@ -176,13 +180,13 @@ class _ReplayViewerState extends State<ReplayViewer> {
           a.position.dx + ((b.position.dx - a.position.dx) * t),
           a.position.dy + ((b.position.dy - a.position.dy) * t),
         ),
-        a.role!,
+        a.role,
       );
     }
   }
 
   final last = replay.positions.last;
-  return (last.position, last.role!);
+  return (last.position, last.role);
 }
 
   List<Face> _getClosedFacesAtTime(double time){
@@ -275,8 +279,8 @@ class _ReplayViewerState extends State<ReplayViewer> {
                       return ReplayPlayerDrawData(
                         position: p.$1,
                         colour: replay.colour,
-                        label: "${replay.playerName}\n${p.$2}",
-                        role: p.$2,
+                        label: "${replay.playerName}\n${p.$2 ?? ''}",
+                        role: p.$2 ?? 'runner',
                       );
                     }).toList();
 
