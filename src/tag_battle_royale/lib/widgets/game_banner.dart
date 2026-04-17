@@ -124,7 +124,7 @@ class GameBanner extends StatelessWidget {
     if (duringGame && currentTime != null){
       final totalPeriodSeconds = zoneClosePeriod * 60;
       final elapsedSeconds = currentTime! ~/ 1000;
-      final remainingSeconds =totalPeriodSeconds - (elapsedSeconds % totalPeriodSeconds);
+      final remainingSeconds = totalPeriodSeconds - (elapsedSeconds % totalPeriodSeconds);
       final minutes = remainingSeconds ~/ 60;
       final seconds = remainingSeconds % 60;
       final timeStr = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';

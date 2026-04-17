@@ -144,9 +144,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     final zones = _activeFaceOrder.take(elapsed ~/ _activeClosureIntervalMs).toSet();
     if(_displayClosedZones.value.length!= zones.length){
       _displayClosedZones.value = zones;
-      if(zones.length != _activeFaceOrder.length){
-        _displayNextZone.value = _activeFaceOrder[zones.length];
-      }else{_displayNextZone.value = null;}
+      _updateNextClosingZone();
     }
     return zones;
   }
@@ -330,6 +328,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
           _graceTimer?.cancel();
           _graceTimer = null;
           _location?.inGracePeriod = false;
+          _updateNextClosingZone();
         }
       });
     });
@@ -371,6 +370,19 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     if(_socket!.currentPlayerId == null){return;}
     _displayPlayers.updatePlayerPosition(_socket!.currentPlayerId!, pos, null);
     _displayPlayers.update();
+  }
+
+  void _updateNextClosingZone(){
+    if(_myRole == 'runner'){return;}
+    final elapsed = DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs;
+    if (elapsed <= 0) return;
+  
+    final zones = _activeFaceOrder.take(elapsed ~/ _activeClosureIntervalMs).toSet();
+    if(zones.length == _activeFaceOrder.length){
+      _displayNextZone.value = null;
+      return;
+    }
+    _displayNextZone.value = _activeFaceOrder[zones.length];
   }
   
   void _setUpDisplay(){
@@ -859,7 +871,6 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       try {
         _receivedMap = MapFile.fromJson(data['map'] as Map<String, dynamic>);
         _activeFaceOrder = List<int>.from(data['faceOrder']);
-        _displayNextZone.value = _activeFaceOrder[0];
         _activeClosureIntervalMs = data['closureIntervalMs'];
         _activeGracePeriodMs = data['gracePeriodMs'];
 
@@ -897,7 +908,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _socket!.onLocationBroadcast = (players) {
       if (!mounted) return;
       final List<String> logParts = [];
-      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final now = DateTime.now().millisecondsSinceEpoch;
 
       _lastBroadcastTime ??= now;
       final deltaMs = now - _lastBroadcastTime!;
@@ -939,12 +950,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       setState(() => _activeFaceOrder = newOrder);
 
       // Update the next zone display
-      final closedCount = _closedZones.length;
-      if (closedCount < _activeFaceOrder.length) {
-        _displayNextZone.value = _activeFaceOrder[closedCount];
-      } else {
-        _displayNextZone.value = null;
-      }
+      _updateNextClosingZone();
 
       _addLog('Zone order updated: ${_activeFaceOrder.toString()}');
       if (_gameStarted) _saveFullSession();
@@ -1323,8 +1329,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     // Lobby, editable fields for host
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: ListView(
         children: [
           Text('Zone Closure', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
@@ -2173,7 +2178,7 @@ Widget _buildLobbyTopSection(BuildContext context) {
               myRole: _myRole,
               pendingPlayersCount: _pendingPlayers.length,
               inBadZone: _inBadZone,
-              zoneClosePeriod: _closureMinutes,
+              zoneClosePeriod: _activeClosureIntervalMs ~/ 60000,
               currentTime: _gameStartedAt != null ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs : null,
               replayFileAssembled: _replayFileAssembled,
               replayFileSentToServer: _replayFileSentToServer,

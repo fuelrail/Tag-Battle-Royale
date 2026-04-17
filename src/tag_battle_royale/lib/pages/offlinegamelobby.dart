@@ -506,6 +506,19 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _bannerTimer = null;
   }
 
+  void _updateNextClosingZone(){
+    if(_myRole == 'runner'){return;}
+    final elapsed = DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs;
+    if (elapsed <= 0) return;
+  
+    final zones = _activeFaceOrder.take(elapsed ~/ _activeClosureIntervalMs).toSet();
+    if(zones.length == _activeFaceOrder.length){
+      _displayNextZone.value = null;
+      return;
+    }
+    _displayNextZone.value = _activeFaceOrder[zones.length];
+  }
+
   // --------------------------------------------------------------------------
   //  Replay persistence
   // --------------------------------------------------------------------------
@@ -515,8 +528,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _displayCurrentZone.value = zone;
     _displayClosedZones.value = _closedZones;
     _displayPlayers.updatePlayerPosition(userName, position, null);
-    final closedZoneLength = _closedZones.length;
-    _displayNextZone.value = closedZoneLength < _activeFaceOrder.length ? _activeFaceOrder[closedZoneLength] : null;
+    _updateNextClosingZone();
     _persistReplay();
   }
 
@@ -2106,8 +2118,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: ListView( 
         children: [
           Text('Zone Closure', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
@@ -2511,7 +2522,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
         graceSecondsRemaining: 0,
         myRole: _myRole,
         pendingPlayersCount: _pendingGamePlayers.length,
-        zoneClosePeriod: _closureMinutes,
+        zoneClosePeriod: _activeClosureIntervalMs ~/ 60000,
         currentTime: _gameStartedAt != null ? DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs : null,
       );
     }

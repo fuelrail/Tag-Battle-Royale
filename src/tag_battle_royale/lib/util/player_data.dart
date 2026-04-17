@@ -49,10 +49,9 @@ class PlayerData {
   });
 
   ///Host = purple, Chaser = red, Runner = black.
-  Color get nameColour {
-    if (isHost) return Colors.blue;
-    if (role == 'chaser') return Colors.red;
-    return Colors.black;
+  Color get nameColour {;
+    if (role == 'runner') return Colors.blue;
+    return Colors.red;
   }
 }
 

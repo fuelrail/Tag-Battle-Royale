@@ -45,6 +45,7 @@ class Players extends ChangeNotifier {
   void incrementPlayerAge(String id, int time){
     final player = _playersById[id];
     if(player == null || player.lastSeen == null){return;}
+    print(player.lastSeen);
     player.lastSeen = player.lastSeen! + time;
   }
 
