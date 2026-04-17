@@ -25,6 +25,8 @@ class GameBanner extends StatelessWidget {
     this.isOnline = true,
     this.replayFileAssembled = false,
     this.replayFileSentToServer = false,
+    this.outOfZoneTimerEnabled = false,
+    this.outOfZoneSecondsRemaining,
   });
 
   final bool gameStarted;
@@ -47,6 +49,9 @@ class GameBanner extends StatelessWidget {
 
   final bool replayFileAssembled;
   final bool replayFileSentToServer;
+
+  final bool outOfZoneTimerEnabled;
+  final int? outOfZoneSecondsRemaining;
 
   @override
   Widget build(BuildContext context) {
@@ -121,12 +126,21 @@ class GameBanner extends StatelessWidget {
     // runner outside zone banner
     if(inBadZone && duringGame){
       if(isRunner){
+        String subtitle = isOnline
+            ? 'You are not in an open zone\nThe Chasers can now see you'
+            : 'You are not in an open zone';
+
+        if (outOfZoneTimerEnabled && outOfZoneSecondsRemaining != null) {
+          final mins = outOfZoneSecondsRemaining! ~/ 60;
+          final secs = outOfZoneSecondsRemaining! % 60;
+          final timeStr = '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+          subtitle += '\nAuto-catch in: $timeStr';
+        }
+
         return _banner(
           color: Colors.red,
           title: 'Turn Back!',
-          subtitle: isOnline
-              ? 'You are not in an open zone\nThe Chasers can now see you'
-              : 'You are not in an open zone',
+          subtitle: subtitle,
         );
       }
     }
@@ -168,6 +182,7 @@ class GameBanner extends StatelessWidget {
                   fontWeight: FontWeight.bold)),
           const SizedBox(height: 2),
           Text(subtitle,
+              textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.white, fontSize: 14)),
         ],
       ),

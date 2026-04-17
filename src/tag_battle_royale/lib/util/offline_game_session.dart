@@ -26,6 +26,10 @@ class OfflineGameSession {
   final List<Map<String, dynamic>> players;
   final bool gameFinished;
   final double? finalElapsedSeconds;
+  final bool outOfZoneTimerEnabled;
+  final int outOfZoneTimerMs;
+  final int? outOfZoneRemainingMs;
+  final bool inBadZone;
 
   OfflineGameSession({
     required this.playerName,
@@ -43,6 +47,10 @@ class OfflineGameSession {
     this.players = const [],
     this.gameFinished = false,
     this.finalElapsedSeconds,
+    this.outOfZoneTimerEnabled = false,
+    this.outOfZoneTimerMs = 300000,
+    this.outOfZoneRemainingMs,
+    required this.inBadZone,
   });
 
   Map<String, dynamic> toJson() => {
@@ -61,6 +69,10 @@ class OfflineGameSession {
         'players': players,
         'gameFinished': gameFinished,
         'finalElapsedSeconds': finalElapsedSeconds,
+        'outOfZoneTimerEnabled': outOfZoneTimerEnabled,
+        'outOfZoneTimerMs': outOfZoneTimerMs,
+        'outOfZoneRemainingMs': outOfZoneRemainingMs,
+        'inBadZone': inBadZone,
       };
 
   factory OfflineGameSession.fromJson(Map<String, dynamic> json) {
@@ -82,6 +94,10 @@ class OfflineGameSession {
         .toList() ?? [],
       gameFinished: json['gameFinished'] ?? false,
       finalElapsedSeconds: (json['finalElapsedSeconds'] as num?)?.toDouble(),
+      outOfZoneTimerEnabled: json['outOfZoneTimerEnabled'] ?? false,
+      outOfZoneTimerMs: json['outOfZoneTimerMs'] ?? 300000,
+      outOfZoneRemainingMs: json['outOfZoneRemainingMs'],
+      inBadZone: json['inBadZone'] ?? false,
     );
   }
 

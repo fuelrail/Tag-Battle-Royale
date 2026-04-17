@@ -31,6 +31,10 @@ class GameSession {
     bool? gameFinished,
     String? finishReason,
     double? finalElapsedSeconds,
+    bool? outOfZoneTimerEnabled,
+    int? outOfZoneTimerMs,
+    int? outOfZoneRemainingMs,
+    bool? inBadZone,
   }) async {
     final data = {
       'gameId': gameId,
@@ -52,6 +56,10 @@ class GameSession {
       'gameFinished': gameFinished,
       'finishReason': finishReason,
       'finalElapsedSeconds': finalElapsedSeconds,
+      'outOfZoneTimerEnabled': outOfZoneTimerEnabled,
+      'outOfZoneTimerMs': outOfZoneTimerMs,
+      'outOfZoneRemainingMs': outOfZoneRemainingMs,
+      'inBadZone': inBadZone,
     };
     final file = await _getFile();
     await file.writeAsString(jsonEncode(data));
@@ -151,6 +159,10 @@ class GameSessionData {
   final bool? gameFinished;
   final String? finishReason;
   final double? finalElapsedSeconds;
+  final bool? outOfZoneTimerEnabled;
+  final int? outOfZoneTimerMs;
+  final int? outOfZoneRemainingMs;
+  final bool? inBadZone;
 
   GameSessionData({
     required this.gameId,
@@ -172,6 +184,10 @@ class GameSessionData {
     this.gameFinished,
     this.finishReason,
     this.finalElapsedSeconds,
+    this.outOfZoneTimerEnabled,
+    this.outOfZoneTimerMs,
+    this.outOfZoneRemainingMs,
+    this.inBadZone,
   });
 
   factory GameSessionData.fromJson(Map<String, dynamic> json) {
@@ -195,6 +211,9 @@ class GameSessionData {
       gameFinished: json['gameFinished'],
       finishReason: json['finishReason'],
       finalElapsedSeconds: (json['finalElapsedSeconds'] as num?)?.toDouble(),
+      outOfZoneTimerEnabled: json['outOfZoneTimerEnabled'],
+      outOfZoneTimerMs: json['outOfZoneTimerMs'],
+      outOfZoneRemainingMs: json['outOfZoneRemainingMs'],
     );
   }
 }

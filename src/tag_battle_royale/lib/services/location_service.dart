@@ -2,6 +2,7 @@ import "package:flutter/material.dart";
 import 'dart:async';
 import 'dart:ui' show Offset;
 import 'package:geolocator/geolocator.dart';
+
 import 'game_socket_service.dart';
 import '../util/map_file_handler.dart';
 
@@ -44,8 +45,21 @@ class LocationService {
   /// Called each time a position is sent.
   void Function(Offset position, int? zone, String role)? onFrameRecorded;
 
+  // Out-of-zone auto-catch timer
+  bool outOfZoneTimerEnabled = false;
+  int outOfZoneTimerMs = 300000; // 5 minutes default
+  int _outOfZoneRemainingMs = 0;
+  int _gpsMissCount = 0;
+  Timer? _outOfZoneTimer;
 
-  /// This can act as a callback for logging in the game screen.
+  /// Called every second with remaining seconds.
+  void Function(int remainingSeconds)? onOutOfZoneTimerTick;
+  /// Called when the out-of-zone timer expires (runner should be auto-caught).
+  void Function()? onOutOfZoneExpired;
+
+  int get outOfZoneRemainingMs => _outOfZoneRemainingMs;
+  set outOfZoneRemainingMs(int value) => _outOfZoneRemainingMs = value;
+
   void Function(String message)? onLog;
 
   LocationService({
@@ -84,6 +98,12 @@ class LocationService {
       _startSendTimer();
     } else {
       _log('Socket not connected, GPS is running but not sending');
+    }
+
+    // Start the out-of-zone countdown timer (ticks every second,
+    // only decrements when conditions are met)
+    if (outOfZoneTimerEnabled && role == 'runner') {
+      _startOutOfZoneTimer();
     }
 
     _log('Location tracking started (sending every ${sendIntervalMs}ms if connected)');
@@ -174,6 +194,30 @@ class LocationService {
     );
   }
 
+  void _startOutOfZoneTimer() {
+    _outOfZoneTimer?.cancel();
+    if (_outOfZoneRemainingMs <= 0) _outOfZoneRemainingMs = outOfZoneTimerMs;
+    _outOfZoneTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      // Only count down when all conditions are met
+      if (role != 'runner') return;
+      if (inGracePeriod) return;
+      if (!inClosedZone) return;
+      if (_gpsMissCount >= 3) return;
+
+      _outOfZoneRemainingMs -= 1000;
+      if (_outOfZoneRemainingMs < 0) _outOfZoneRemainingMs = 0;
+      onOutOfZoneTimerTick?.call((_outOfZoneRemainingMs / 1000).ceil());
+
+      if (_outOfZoneRemainingMs <= 0) {
+        _log('Out-of-zone timer expired, auto-catching runner');
+        _outOfZoneTimer?.cancel();
+        _outOfZoneTimer = null;
+        onOutOfZoneExpired?.call();
+      }
+    });
+    _log('Out-of-zone timer ready: ${_outOfZoneRemainingMs ~/ 1000}s');
+  }
+
   /// Timer that sends the latest known position to the server at a fixed interval.
   /// Only runs while socket is connected. Only sends if GPS has provided a new
   /// update since the last send.
@@ -186,6 +230,8 @@ class LocationService {
         if (_hasSocket && !_socketConnected) return;
 
         if (_newPositionArrived && _latestPosition != null) {
+          _gpsMissCount = 0;
+
           final pos = _latestPosition!;
           final imageOffset = _latLngToImage(pos);
 
@@ -216,6 +262,15 @@ class LocationService {
             updateInClosedZone?.call(revealed);
           }
 
+          // Reset out-of-zone timer when runner returns to a safe zone
+          if (role == 'runner' && !inGracePeriod && outOfZoneTimerEnabled && !revealed) {
+            if (_outOfZoneRemainingMs < outOfZoneTimerMs) {
+              _outOfZoneRemainingMs = outOfZoneTimerMs;
+              onOutOfZoneTimerTick?.call((_outOfZoneRemainingMs / 1000).ceil());
+              _log('Out-of-zone timer reset');
+            }
+          }
+
           if (_hasSocket && _socketConnected) {
             gameSocketService!.sendLocation(
               x: imageOffset.dx,
@@ -236,7 +291,8 @@ class LocationService {
           _newPositionArrived = false;
         } else {
           // No position yet, server will mark us as stale after its threshold
-          _log('No GPS position available to send');
+          _gpsMissCount++;
+          _log('No GPS position available to send (miss $_gpsMissCount)');
         }
       },
     );
@@ -247,10 +303,13 @@ class LocationService {
     _gpsSubscription = null;
     _sendTimer?.cancel();
     _sendTimer = null;
+    _outOfZoneTimer?.cancel();
+    _outOfZoneTimer = null;
     _latestPosition = null;
     _newPositionArrived = false;
     _tracking = false;
     _retryCount = 0;
+    _gpsMissCount = 0;
     _socketConnected = false;
     getClosedZones = null;
     onFrameRecorded = null;
@@ -260,6 +319,8 @@ class LocationService {
 
   void dispose() {
     stopTracking();
+    onOutOfZoneTimerTick = null;
+    onOutOfZoneExpired = null;
   }
 
   void _log(String message) {

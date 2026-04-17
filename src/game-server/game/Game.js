@@ -9,12 +9,12 @@ class Game {
     this.startedAt = null;
     this.finishedAt = null;
     this.finishReason = null; // "all_caught" or "host_ended"
-    this.maxPlayers = config.maxPlayers || 10;
+    this.maxPlayers = 10;
     this.metadata = config.metadata || {};
 
-    // Broadcast config 
-    this.broadcastIntervalMs = config.broadcastIntervalMs || 4000;
-    this.staleThresholdMs = config.staleThresholdMs || 12000; // no update = stale
+    // Broadcast  
+    this.broadcastIntervalMs = 5000;
+    this.staleThresholdMs = 15000; // no update = stale
     this._broadcastTimer = null;
     this._broadcastCallback = null; // set by GameManager when game starts
     this._graceTimer = null;
@@ -27,6 +27,8 @@ class Game {
     this.faceOrder = []; // ordered list of faceIDs
     this.closureIntervalMs = null;
     this.gracePeriodMs = null;
+    this.outOfZoneTimerEnabled = false;
+    this.outOfZoneTimerMs = null;
 
     // Chat history per channel
     this.chatHistory = {

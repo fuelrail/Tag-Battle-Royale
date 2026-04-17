@@ -304,12 +304,16 @@ class GameSocketService {
     required List<int> faceOrder,
     required int closureIntervalMs,
     required int gracePeriodMs,
+    required bool outOfZoneTimerEnabled,
+    required int outOfZoneTimerMs,
   }) {
     _socket.emit('game:start', {
       'map': mapJson,
       'faceOrder': faceOrder,
       'closureIntervalMs': closureIntervalMs,
       'gracePeriodMs': gracePeriodMs,
+      'outOfZoneTimerEnabled': outOfZoneTimerEnabled,
+      'outOfZoneTimerMs': outOfZoneTimerMs,
     });
   }
 
