@@ -328,6 +328,8 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   bool _pendingAcceptance = false; // joiner waiting for host acceptance
   bool _inLobby = false; // joiner accepted into lobby
   double? _finalElapsedSeconds;
+  bool _activeOutOfZoneTimerEnabled = false;
+  int _activeOutOfZoneTimerMs = 300000;
 
   // Map & config
   MapFile? _selectedMap;
@@ -339,6 +341,11 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       TextEditingController(text: '15');
   final TextEditingController _gracePeriodController =
       TextEditingController(text: '90');
+  int _outOfZoneMinutes = 5;
+  bool _outOfZoneTimerEnabled = true;
+  final TextEditingController _outOfZoneMinutesController =
+      TextEditingController(text: '5');
+  int? _outOfZoneSecondsRemaining;
 
   // Game start
   bool _isStarting = false;
@@ -454,6 +461,8 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _activeFaceOrder = List<int>.from(session.faceOrder);
     _activeClosureIntervalMs = session.closureIntervalMs;
     _activeGracePeriodMs = session.gracePeriodMs;
+    _activeOutOfZoneTimerEnabled = session.outOfZoneTimerEnabled;
+    _activeOutOfZoneTimerMs = session.outOfZoneTimerMs;
 
     if (session.mapJson != null) {
       _receivedMap = MapFile.fromJson(session.mapJson!);
@@ -501,7 +510,24 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _location!.role = session.role;
     _location!.getClosedZones = () => _closedZones;
     _location!.updateInClosedZone = _updateInBadZone;
+    _location!.outOfZoneTimerEnabled = _activeOutOfZoneTimerEnabled;
+    _location!.outOfZoneTimerMs = _activeOutOfZoneTimerMs;
+    _location!.onOutOfZoneTimerTick = (remaining) {
+      if (!mounted) return;
+      setState(() => _outOfZoneSecondsRemaining = remaining);
+    };
+    _location!.onOutOfZoneExpired = () {
+      if (!mounted) return;
+      if (_myRole == 'runner') {
+        _addLog('Auto-caught: out-of-zone timer expired');
+        _onCaught();
+      }
+    };
     _location!.onFrameRecorded = _onFrameRecorded;
+    if (session.outOfZoneRemainingMs != null) {
+      _location!.outOfZoneRemainingMs = session.outOfZoneRemainingMs!;
+    }
+
     _startGraceCountdown();
     _startBannerTimer();
 
@@ -538,6 +564,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _playersScrollController.dispose();
     _closureMinutesController.dispose();
     _gracePeriodController.dispose();
+    _outOfZoneMinutesController.dispose();
     _replayConnectedNames.clear();
     super.dispose();
   }
@@ -675,6 +702,9 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       }).toList(),
       gameFinished: _gameFinished,
       finalElapsedSeconds: _finalElapsedSeconds,
+      outOfZoneTimerEnabled: _activeOutOfZoneTimerEnabled,
+      outOfZoneTimerMs: _activeOutOfZoneTimerMs,
+      outOfZoneRemainingMs: _location?.outOfZoneRemainingMs,
     ));
   }
 
@@ -695,6 +725,8 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
     _activeClosureIntervalMs = _closureMinutes * 60 * 1000;
     _activeGracePeriodMs = _gracePeriodSeconds * 1000;
+    _activeOutOfZoneTimerEnabled = _outOfZoneTimerEnabled;
+    _activeOutOfZoneTimerMs = _outOfZoneMinutes * 60 * 1000;
     _activeFaceOrder = List<int>.from(_faceOrder!);
     _receivedMap = _selectedMap;
     _mapConfirmations.clear();
@@ -706,6 +738,8 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       'faceOrder': _activeFaceOrder,
       'closureIntervalMs': _activeClosureIntervalMs,
       'gracePeriodMs': _activeGracePeriodMs,
+      'outOfZoneTimerEnabled': _activeOutOfZoneTimerEnabled,
+      'outOfZoneTimerMs': _activeOutOfZoneTimerMs,
     };
     final mapCmd = Cmd.gameMap(mapPayload);
     _addLog('Map command size: ${mapCmd.length} bytes');
@@ -772,6 +806,19 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _location!.role = _myRole;
     _location!.getClosedZones = () => _closedZones;
     _location!.updateInClosedZone = _updateInBadZone;
+    _location!.outOfZoneTimerEnabled = _activeOutOfZoneTimerEnabled;
+    _location!.outOfZoneTimerMs = _activeOutOfZoneTimerMs;
+    _location!.onOutOfZoneTimerTick = (remaining) {
+      if (!mounted) return;
+      setState(() => _outOfZoneSecondsRemaining = remaining);
+    };
+    _location!.onOutOfZoneExpired = () {
+      if (!mounted) return;
+      if (_myRole == 'runner') {
+        _addLog('Auto-caught: out-of-zone timer expired');
+        _onCaught();
+      }
+    };
 
     _startReplay();
     _startGraceCountdown();
@@ -1318,6 +1365,8 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       _activeFaceOrder = List<int>.from(payload['faceOrder']);
       _activeClosureIntervalMs = payload['closureIntervalMs'];
       _activeGracePeriodMs = payload['gracePeriodMs'];
+      _activeOutOfZoneTimerEnabled = payload['outOfZoneTimerEnabled'];
+      _activeOutOfZoneTimerMs = payload['outOfZoneTimerMs'];
       _addLog('Map received and stored');
 
       // Confirm to host
@@ -2680,7 +2729,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       );
     }
 
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2732,13 +2781,50 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
             ),
             const Text(' seconds'),
           ]),
+          const SizedBox(height: 20),
+          Text('Out-of-Zone Timer', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Text('Enable auto-catch timer'),
+              const Spacer(),
+              Switch(
+                value: _outOfZoneTimerEnabled,
+                onChanged: (v) => setState(() => _outOfZoneTimerEnabled = v),
+              ),
+            ],
+          ),
+          if (_outOfZoneTimerEnabled)
+            Row(
+              children: [
+                const Text('Auto-catch after '),
+                SizedBox(
+                  width: 60,
+                  child: TextField(
+                    controller: _outOfZoneMinutesController,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    onChanged: (v) {
+                      final m = int.tryParse(v);
+                      if (m != null && m > 0) _outOfZoneMinutes = m;
+                    },
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const Text(' minutes'),
+              ],
+            ),
         ],
       ),
     );
   }
 
   Widget _buildRulesSubTab() {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2750,6 +2836,12 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
           Text('Grace Period', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
           Text('Grace period of: ${_activeGracePeriodMs ~/ 1000} seconds'),
+          const SizedBox(height: 20),
+          Text('Out-of-Zone Timer', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          Text(_activeOutOfZoneTimerEnabled
+            ? 'Auto-catch after: ${_activeOutOfZoneTimerMs ~/ 60000} minutes outside zone'
+            : 'Auto-catch timer: Disabled'),
         ],
       ),
     );
@@ -3234,6 +3326,8 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
         gameElapsedSeconds: _gameStartedAt != null
           ? DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0
           : null,
+        outOfZoneTimerEnabled: _activeOutOfZoneTimerEnabled,
+        outOfZoneSecondsRemaining: _outOfZoneSecondsRemaining,
       );
     } else if (_gameStarted && !_gameFinished) {
       banner = GameBanner(
@@ -3257,6 +3351,8 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
         gameElapsedSeconds: _gameStartedAt != null
           ? DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0
           : null,
+        outOfZoneTimerEnabled: _activeOutOfZoneTimerEnabled,
+        outOfZoneSecondsRemaining: _outOfZoneSecondsRemaining,
       );
     } else if (!_gameStarted && isHost && _pendingGamePlayers.isNotEmpty) {
       banner = GameBanner(
@@ -3280,6 +3376,8 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
         gameElapsedSeconds: _gameStartedAt != null
           ? DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0
           : null,
+        outOfZoneTimerEnabled: _activeOutOfZoneTimerEnabled,
+        outOfZoneSecondsRemaining: _outOfZoneSecondsRemaining,
       );
     }
 

@@ -351,6 +351,8 @@ function registerGameHandlers(io, socket, gameManager) {
           faceOrder: game.faceOrder,
           closureIntervalMs: game.closureIntervalMs,
           gracePeriodMs: game.gracePeriodMs,
+          outOfZoneTimerEnabled: game.outOfZoneTimerEnabled,
+          outOfZoneTimerMs: game.outOfZoneTimerMs,
         });
         console.log(`[game:rejoin] Sent map data to reconnecting player "${player.name} (${player.id})"`);
       }
@@ -500,6 +502,16 @@ function registerGameHandlers(io, socket, gameManager) {
       return emitError(socket, callback, "game:start", "Grace period is required");
     }
 
+    const outOfZoneTimerEnabled = data.outOfZoneTimerEnabled;
+    if (typeof outOfZoneTimerEnabled !== "boolean") {
+      return emitError(socket, callback, "game:start", "Out-of-zone info is required");
+    }
+
+    const outOfZoneTimerMs = data.outOfZoneTimerMs;
+    if (typeof outOfZoneTimerMs !== "number" || outOfZoneTimerMs < 0) {
+      return emitError(socket, callback, "game:start", "Out-of-zone info is required");
+    }
+
     //const runnerCount = Array.from(game.players.values()).filter(p => p.role === "runner").length;
     //if (runnerCount === 0) {
     //  return emitError(socket, callback, "game:start", "At least one runner is required to start");
@@ -527,6 +539,8 @@ function registerGameHandlers(io, socket, gameManager) {
     game.faceOrder = faceOrder;
     game.closureIntervalMs = closureIntervalMs;
     game.gracePeriodMs = gracePeriodMs;
+    game.outOfZoneTimerEnabled = outOfZoneTimerEnabled;
+    game.outOfZoneTimerMs = outOfZoneTimerMs;
     game.mapConfirmations = new Set();
     game.status = "starting";
 
@@ -536,6 +550,8 @@ function registerGameHandlers(io, socket, gameManager) {
       faceOrder: game.faceOrder,
       closureIntervalMs: game.closureIntervalMs,
       gracePeriodMs: game.gracePeriodMs,
+      outOfZoneTimerEnabled: game.outOfZoneTimerEnabled,
+      outOfZoneTimerMs: game.outOfZoneTimerMs,
     });
     console.log(`[game:start] Map sent to all players in game ${game.id}, waiting for confirmations`);
 
