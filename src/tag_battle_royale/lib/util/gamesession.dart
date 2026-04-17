@@ -34,6 +34,7 @@ class GameSession {
     bool? outOfZoneTimerEnabled,
     int? outOfZoneTimerMs,
     int? outOfZoneRemainingMs,
+    bool? inBadZone,
   }) async {
     final data = {
       'gameId': gameId,
@@ -58,6 +59,7 @@ class GameSession {
       'outOfZoneTimerEnabled': outOfZoneTimerEnabled,
       'outOfZoneTimerMs': outOfZoneTimerMs,
       'outOfZoneRemainingMs': outOfZoneRemainingMs,
+      'inBadZone': inBadZone,
     };
     final file = await _getFile();
     await file.writeAsString(jsonEncode(data));
@@ -160,6 +162,7 @@ class GameSessionData {
   final bool? outOfZoneTimerEnabled;
   final int? outOfZoneTimerMs;
   final int? outOfZoneRemainingMs;
+  final bool? inBadZone;
 
   GameSessionData({
     required this.gameId,
@@ -184,6 +187,7 @@ class GameSessionData {
     this.outOfZoneTimerEnabled,
     this.outOfZoneTimerMs,
     this.outOfZoneRemainingMs,
+    this.inBadZone,
   });
 
   factory GameSessionData.fromJson(Map<String, dynamic> json) {

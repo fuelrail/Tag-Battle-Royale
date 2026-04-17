@@ -94,7 +94,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   final TextEditingController _gracePeriodController =
       TextEditingController(text: '90');
   int _outOfZoneMinutes = 5;
-  bool _outOfZoneTimerEnabled = true;
+  bool _outOfZoneTimerEnabled = false;
   final TextEditingController _outOfZoneMinutesController =
       TextEditingController(text: '5');
   int? _outOfZoneSecondsRemaining;
@@ -177,6 +177,9 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _location?.onOutOfZoneTimerTick = (remaining) {
       if (!mounted) return;
       setState(() => _outOfZoneSecondsRemaining = remaining);
+      if (remaining % 15 == 0 && _gameStarted && !_gameFinished) {
+        _saveFullSession();
+      }
     };
     _location?.onOutOfZoneExpired = () {
       if (!mounted) return;
@@ -331,6 +334,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       }
     }
 
+    if (session.inBadZone == true) {
+      _inBadZone = true;
+    }
+
     _addLog('Resumed from saved session (connecting in background...)');
   }
 
@@ -406,6 +413,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
   void _updateInBadZone(bool isInBadZone){
     setState(() => _inBadZone = isInBadZone);
+    if (_gameStarted && !_gameFinished) _saveFullSession();
   }
 
   void _updateCurrentZone(int? id){
@@ -512,6 +520,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       outOfZoneTimerEnabled: _activeOutOfZoneTimerEnabled,
       outOfZoneTimerMs: _activeOutOfZoneTimerMs,
       outOfZoneRemainingMs: _location?.outOfZoneRemainingMs,
+      inBadZone: _inBadZone,
     );
   }
 

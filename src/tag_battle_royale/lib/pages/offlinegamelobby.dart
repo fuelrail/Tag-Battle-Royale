@@ -342,7 +342,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
   final TextEditingController _gracePeriodController =
       TextEditingController(text: '90');
   int _outOfZoneMinutes = 5;
-  bool _outOfZoneTimerEnabled = true;
+  bool _outOfZoneTimerEnabled = false;
   final TextEditingController _outOfZoneMinutesController =
       TextEditingController(text: '5');
   int? _outOfZoneSecondsRemaining;
@@ -515,6 +515,9 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _location!.onOutOfZoneTimerTick = (remaining) {
       if (!mounted) return;
       setState(() => _outOfZoneSecondsRemaining = remaining);
+      if (remaining % 15 == 0 && _gameStarted && !_gameFinished) {
+        _saveSession();
+      }
     };
     _location!.onOutOfZoneExpired = () {
       if (!mounted) return;
@@ -526,6 +529,10 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _location!.onFrameRecorded = _onFrameRecorded;
     if (session.outOfZoneRemainingMs != null) {
       _location!.outOfZoneRemainingMs = session.outOfZoneRemainingMs!;
+    }
+
+    if (session.inBadZone) {
+      _inBadZone = true;
     }
 
     _startGraceCountdown();
@@ -650,6 +657,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
 
   void _updateInBadZone(bool isInBadZone) {
     setState(() => _inBadZone = isInBadZone);
+    if (_gameStarted && !_gameFinished) _saveSession();
   }
 
   Future<void> _persistReplay() async {
@@ -705,6 +713,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
       outOfZoneTimerEnabled: _activeOutOfZoneTimerEnabled,
       outOfZoneTimerMs: _activeOutOfZoneTimerMs,
       outOfZoneRemainingMs: _location?.outOfZoneRemainingMs,
+      inBadZone: _inBadZone,
     ));
   }
 

@@ -46,15 +46,13 @@ class LocationService {
   void Function(Offset position, int? zone, String role)? onFrameRecorded;
 
   // Out-of-zone auto-catch timer
-  bool outOfZoneTimerEnabled = true;
+  bool outOfZoneTimerEnabled = false;
   int outOfZoneTimerMs = 300000; // 5 minutes default
   int _outOfZoneRemainingMs = 0;
-  bool _outOfZoneActive = false;
-  bool _outOfZonePaused = false;
   int _gpsMissCount = 0;
   Timer? _outOfZoneTimer;
-  
-  /// Called every second while the out-of-zone countdown is active.
+
+  /// Called every second with remaining seconds.
   void Function(int remainingSeconds)? onOutOfZoneTimerTick;
   /// Called when the out-of-zone timer expires (runner should be auto-caught).
   void Function()? onOutOfZoneExpired;
@@ -100,6 +98,12 @@ class LocationService {
       _startSendTimer();
     } else {
       _log('Socket not connected, GPS is running but not sending');
+    }
+
+    // Start the out-of-zone countdown timer (ticks every second,
+    // only decrements when conditions are met)
+    if (outOfZoneTimerEnabled && role == 'runner') {
+      _startOutOfZoneTimer();
     }
 
     _log('Location tracking started (sending every ${sendIntervalMs}ms if connected)');
@@ -190,55 +194,28 @@ class LocationService {
     );
   }
 
-  void _startOutOfZoneCountdown() {
-    if (_outOfZoneActive) return;
+  void _startOutOfZoneTimer() {
+    _outOfZoneTimer?.cancel();
     if (_outOfZoneRemainingMs <= 0) _outOfZoneRemainingMs = outOfZoneTimerMs;
-    _outOfZoneActive = true;
-    _outOfZonePaused = false;
     _outOfZoneTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_outOfZonePaused) return; // skip tick but keep timer alive
+      // Only count down when all conditions are met
+      if (role != 'runner') return;
+      if (inGracePeriod) return;
+      if (!inClosedZone) return;
+      if (_gpsMissCount >= 3) return;
+
       _outOfZoneRemainingMs -= 1000;
       if (_outOfZoneRemainingMs < 0) _outOfZoneRemainingMs = 0;
       onOutOfZoneTimerTick?.call((_outOfZoneRemainingMs / 1000).ceil());
+
       if (_outOfZoneRemainingMs <= 0) {
         _log('Out-of-zone timer expired, auto-catching runner');
-        _stopOutOfZoneCountdown();
+        _outOfZoneTimer?.cancel();
+        _outOfZoneTimer = null;
         onOutOfZoneExpired?.call();
       }
     });
-    _log('Out-of-zone timer started: ${_outOfZoneRemainingMs ~/ 1000}s remaining');
-  }
-
-  void _resetOutOfZoneCountdown() {
-    final wasActive = _outOfZoneActive;
-    _outOfZoneTimer?.cancel();
-    _outOfZoneTimer = null;
-    _outOfZoneActive = false;
-    _outOfZonePaused = false;
-    _outOfZoneRemainingMs = outOfZoneTimerMs;
-    onOutOfZoneTimerTick?.call((_outOfZoneRemainingMs / 1000).ceil());
-    if (wasActive) {
-      _log('Out-of-zone timer reset');
-    }
-  }
-
-  void _stopOutOfZoneCountdown() {
-    _outOfZoneTimer?.cancel();
-    _outOfZoneTimer = null;
-    _outOfZoneActive = false;
-    _outOfZonePaused = false;
-  }
-
-  void _pauseOutOfZoneCountdown() {
-    if (!_outOfZoneActive || _outOfZonePaused) return;
-    _outOfZonePaused = true;
-    _log('Out-of-zone timer paused (GPS stale)');
-  }
-
-  void _resumeOutOfZoneCountdown() {
-    if (!_outOfZoneActive || !_outOfZonePaused) return;
-    _outOfZonePaused = false;
-    _log('Out-of-zone timer resumed');
+    _log('Out-of-zone timer ready: ${_outOfZoneRemainingMs ~/ 1000}s');
   }
 
   /// Timer that sends the latest known position to the server at a fixed interval.
@@ -252,18 +229,8 @@ class LocationService {
       (_) {
         if (_hasSocket && !_socketConnected) return;
 
-        // If role changed to chaser while timer was active, stop it
-        if (role != 'runner' && _outOfZoneActive) {
-          _resetOutOfZoneCountdown();
-        }
-
         if (_newPositionArrived && _latestPosition != null) {
           _gpsMissCount = 0;
-
-          // Resume out-of-zone timer if it was paused due to GPS stale
-          if (_outOfZonePaused) {
-            _resumeOutOfZoneCountdown();
-          }
 
           final pos = _latestPosition!;
           final imageOffset = _latLngToImage(pos);
@@ -295,16 +262,12 @@ class LocationService {
             updateInClosedZone?.call(revealed);
           }
 
-          // Out-of-zone timer logic
-          if (role == 'runner' && !inGracePeriod && outOfZoneTimerEnabled) {
-            if (revealed) {
-              if (!_outOfZoneActive) {
-                _startOutOfZoneCountdown();
-              }
-            } else {
-              if (_outOfZoneActive) {
-                _resetOutOfZoneCountdown();
-              }
+          // Reset out-of-zone timer when runner returns to a safe zone
+          if (role == 'runner' && !inGracePeriod && outOfZoneTimerEnabled && !revealed) {
+            if (_outOfZoneRemainingMs < outOfZoneTimerMs) {
+              _outOfZoneRemainingMs = outOfZoneTimerMs;
+              onOutOfZoneTimerTick?.call((_outOfZoneRemainingMs / 1000).ceil());
+              _log('Out-of-zone timer reset');
             }
           }
 
@@ -330,11 +293,6 @@ class LocationService {
           // No position yet, server will mark us as stale after its threshold
           _gpsMissCount++;
           _log('No GPS position available to send (miss $_gpsMissCount)');
-
-          // Pause out-of-zone timer after 3 consecutive GPS failures
-          if (_gpsMissCount >= 3 && _outOfZoneActive && !_outOfZonePaused) {
-            _pauseOutOfZoneCountdown();
-          }
         }
       },
     );
@@ -345,7 +303,8 @@ class LocationService {
     _gpsSubscription = null;
     _sendTimer?.cancel();
     _sendTimer = null;
-    _stopOutOfZoneCountdown();
+    _outOfZoneTimer?.cancel();
+    _outOfZoneTimer = null;
     _latestPosition = null;
     _newPositionArrived = false;
     _tracking = false;

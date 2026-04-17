@@ -27,7 +27,7 @@ class Game {
     this.faceOrder = []; // ordered list of faceIDs
     this.closureIntervalMs = null;
     this.gracePeriodMs = null;
-    this.outOfZoneTimerEnabled = true;
+    this.outOfZoneTimerEnabled = false;
     this.outOfZoneTimerMs = null;
 
     // Chat history per channel
