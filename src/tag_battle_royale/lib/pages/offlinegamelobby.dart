@@ -508,6 +508,16 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     if (_receivedMap != null) {
       _location!.startTracking();
     }
+
+    // Restore finished state
+    if (session.gameFinished) {
+      _gameFinished = true;
+      _finalElapsedSeconds = session.finalElapsedSeconds;
+      _location?.stopTracking();
+      _stopBannerTimer();
+
+      _reloadLeaderboard();
+    }
   }
   
   @override
@@ -663,6 +673,8 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
         'role': p.role,
         'isHost': p.isHost,
       }).toList(),
+      gameFinished: _gameFinished,
+      finalElapsedSeconds: _finalElapsedSeconds,
     ));
   }
 
@@ -806,6 +818,20 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     setState(() => _gameFinished = true);
     _confettiController.play();
     _addLog('Game ended');
+    _saveSession();
+  }
+
+  Future<void> _reloadLeaderboard() async {
+    try {
+      final replays = await getReplayFiles();
+      final match = replays.where((r) => r.mapId == _receivedMap?.id).firstOrNull;
+      if (match != null && match.replays.isNotEmpty) {
+        _extractCaughtDataFromReplays(match.replays);
+        _addLog('Leaderboard restored from saved replay');
+      }
+    } catch (e) {
+      _addLog('Could not restore leaderboard: $e');
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -833,7 +859,6 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     if (_gameFinished) {
       if (isHost && _offlineAssembledReplayJson != null) return true;
       if (!isHost && _assembledReplayReceived) return true;
-      if (!isHost && !_replayExchangeActive) return true; // haven't started, just leave
       title = 'Leave game?';
       content = isHost
         ? 'Replay exchange is in progress.'
@@ -3252,7 +3277,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
         if (didPop) return;
         final shouldLeave = await _confirmLeave();
         if (shouldLeave && context.mounted) {
-          if (_gameFinished || !_gameStarted) {
+          if (!_gameStarted) {
             await OfflineGameSession.clear();
           }
           if (context.mounted) {

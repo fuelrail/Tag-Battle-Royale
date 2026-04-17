@@ -24,6 +24,8 @@ class OfflineGameSession {
   final Map<String, dynamic>? mapJson;
   final Map<String, dynamic>? replayJson;
   final List<Map<String, dynamic>> players;
+  final bool gameFinished;
+  final double? finalElapsedSeconds;
 
   OfflineGameSession({
     required this.playerName,
@@ -39,6 +41,8 @@ class OfflineGameSession {
     this.mapJson,
     this.replayJson,
     this.players = const [],
+    this.gameFinished = false,
+    this.finalElapsedSeconds,
   });
 
   Map<String, dynamic> toJson() => {
@@ -55,6 +59,8 @@ class OfflineGameSession {
         'mapJson': mapJson,
         'replayJson': replayJson,
         'players': players,
+        'gameFinished': gameFinished,
+        'finalElapsedSeconds': finalElapsedSeconds,
       };
 
   factory OfflineGameSession.fromJson(Map<String, dynamic> json) {
@@ -74,6 +80,8 @@ class OfflineGameSession {
       players: (json['players'] as List?)
         ?.map((p) => Map<String, dynamic>.from(p))
         .toList() ?? [],
+      gameFinished: json['gameFinished'] ?? false,
+      finalElapsedSeconds: (json['finalElapsedSeconds'] as num?)?.toDouble(),
     );
   }
 

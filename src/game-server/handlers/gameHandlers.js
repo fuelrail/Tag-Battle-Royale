@@ -311,7 +311,7 @@ function registerGameHandlers(io, socket, gameManager) {
   // the socket, and puts them back in the room.
   socket.on("game:rejoin", (data, callback) => {
     try {
-      const { gameId, playerId, hasMap } = data;
+      const { gameId, playerId, hasMap, hasReplay } = data;
       if (!gameId || !playerId) {
         return emitError(socket, callback, "game:rejoin", "gameId and playerId are required");
       }
@@ -367,7 +367,7 @@ function registerGameHandlers(io, socket, gameManager) {
       }
 
       // Send assembled replay to reconnecting non-host player
-      if (player.id !== game.hostId && game.assembledReplay) {
+      if (player.id !== game.hostId && game.assembledReplay && !hasReplay) {
         socket.emit("replay:file", { replayFile: game.assembledReplay });
         console.log(`[game:rejoin] Sent assembled replay to reconnecting player "${player.name}"`);
       }
