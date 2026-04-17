@@ -8,6 +8,7 @@ class Player {
     required this.colour,
     this.lastSeen,
     this.position,
+    this.role,
   });
 
   final String id;
@@ -15,6 +16,7 @@ class Player {
   Color colour;
   ui.Offset? position;
   int? lastSeen;
+  String? role;
 
   void updateColour(Color colour){
     this.colour = colour;

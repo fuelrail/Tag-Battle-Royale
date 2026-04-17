@@ -6,10 +6,12 @@ class UserPainter extends CustomPainter{
   UserPainter({
     required this.players,
     this.showLabel = false,
+    this.replay = false,
   }): super(repaint: players);
 
   final Players players;
   final bool showLabel;
+  final bool replay;
 
   static const double _radius = 10;
 
@@ -50,10 +52,14 @@ class UserPainter extends CustomPainter{
 
     if(!showLabel) return;
     if(player.name.trim().isEmpty) return;
+    final String label = replay ? "${player.name}\n${player.role}"
+    : player.lastSeen == null 
+      ? player.name 
+      : "${player.name}\n${player.lastSeen! ~/ 1000}/s ago";
 
     final textPainter = TextPainter(
       text: TextSpan(
-        text: player.lastSeen == null ? player.name : "${player.name}\n${player.lastSeen! ~/ 1000}/s ago",
+        text: label,
         style: const TextStyle(
           color: Colors.white,
           fontSize: 12,

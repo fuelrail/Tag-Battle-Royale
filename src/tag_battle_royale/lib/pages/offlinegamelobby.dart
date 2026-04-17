@@ -620,6 +620,11 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     _displayNextZone.value = _activeFaceOrder[zones.length];
   }
 
+  void _updatePlayerColour(String playerID, Color colour){
+    final player = _displayPlayers.getById(playerID);
+    player?.updateColour(colour);
+  }
+
   // --------------------------------------------------------------------------
   //  Replay persistence
   // --------------------------------------------------------------------------
@@ -857,6 +862,7 @@ class _OfflineConnectionScreenState extends State<OfflineConnectionScreen> {
     setState(() => me.role = 'chaser');
     _location?.role = 'chaser';
     OfflineGameSession.updateRole('chaser');
+    _updatePlayerColour(me.id, Colors.red);
     _addLog("I've been caught, now a chaser");
   }
 
