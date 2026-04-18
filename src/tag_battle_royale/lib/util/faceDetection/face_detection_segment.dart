@@ -127,6 +127,8 @@ class SegmentBuilder {
         final hit = segmentIntersection(seg.a, seg.b, other.a, other.b);
         // if theres an intersection store it
         if(hit != null){
+          // print('seg-seg intersection: ${seg.ref} -> ${other.ref}');
+
           pushUnique(segmentPoints[seg.ref]!, hit);
           pushUnique(segmentPoints[other.ref]!, hit);
         }
@@ -168,6 +170,8 @@ class SegmentBuilder {
         }
       }
       if(bestSeg != null && bestProj != null){
+        // print('seg-ep intersection:${ep.segmentRef} -> ${bestSeg.ref}');
+
         pushUnique(segmentPoints[ep.segmentRef]!, bestProj);
         pushUnique(segmentPoints[bestSeg.ref]!, bestProj);
       }

@@ -22,7 +22,7 @@ class EdgePainter extends CustomPainter{
   }
 
   @override
-  bool shouldRepaint(covariant EdgePainter oldDelegate){
-    return false;
+  bool shouldRepaint(covariant EdgePainter oldDelegate) {
+    return oldDelegate.edges != edges;
   }
 }

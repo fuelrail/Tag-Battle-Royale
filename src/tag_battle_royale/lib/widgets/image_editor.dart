@@ -13,6 +13,8 @@ import '../util/faceDetection/face_detection_point.dart';
 import '../util/map_file_handler.dart';
 import '../widgets/map_transform.dart';
 
+import '../util/mapPainter/testing/vertex_painter.dart';
+
 enum EditorTool {
   pen,
   line,
@@ -129,6 +131,7 @@ class ImageEditorState extends State<ImageEditor> {
   // bad to the draw mode
   void _backToDrawMode(){
     setState((){
+      _rebuildGraph();
       drawMode = true;
       currentTool = null;
       _toolboxOpen = false;
@@ -436,6 +439,19 @@ class ImageEditorState extends State<ImageEditor> {
     );
   }
 
+//   void _printStrokesAsCode(){
+//   for(final stroke in strokes){
+//     print('Stroke(index:${stroke.index}, points:[');
+//     for(final point in stroke.points){
+//       final dx = point.dx.toStringAsFixed(point.dx == point.dx.roundToDouble() ? 0 : 1);
+//       final dy = point.dy.toStringAsFixed(point.dy == point.dy.roundToDouble() ? 0 : 1);
+
+//       print('  const ui.Offset($dx,$dy),');
+//     }
+//     print(']),');
+//   }
+// }
+
   @override
   Widget build(BuildContext context){
     final imageSize = Size(widget.image.width.toDouble(), widget.image.height.toDouble());
@@ -484,6 +500,11 @@ class ImageEditorState extends State<ImageEditor> {
             _buildToolButton(EditorTool.pen),
             _buildToolButton(EditorTool.line),
             _buildToolButton(EditorTool.eraser),
+            // IconButton(
+            //   icon: const Icon(Icons.print),
+            //   onPressed: _printStrokesAsCode,
+            //   color: Theme.of(context).colorScheme.primary,
+            // ),
             IconButton(
               icon: const Icon(Icons.undo),
               onPressed: _undo,
@@ -576,6 +597,15 @@ class ImageEditorState extends State<ImageEditor> {
                   },
                 ),
               ),
+              // CustomPaint(
+              //   size: Size(
+              //     widget.image.width.toDouble(),
+              //     widget.image.height.toDouble(),
+              //   ),
+              //   painter: VertexPainter(
+              //     vertice: _faceDetector.graph?.vertices ?? [],
+              //   ),
+              // ),
           ],
         ),
       ),
@@ -602,7 +632,7 @@ class ImageEditorState extends State<ImageEditor> {
 //     for(final point in stroke.points){
 //       final dx = point.dx.toStringAsFixed(point.dx == point.dx.roundToDouble() ? 0 : 1);
 //       final dy = point.dy.toStringAsFixed(point.dy == point.dy.roundToDouble() ? 0 : 1);
-//
+
 //       print('  const ui.Offset($dx,$dy),');
 //     }
 //     print(']),');

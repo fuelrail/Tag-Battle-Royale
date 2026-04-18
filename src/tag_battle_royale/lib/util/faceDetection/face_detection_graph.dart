@@ -40,7 +40,7 @@ class GraphBuilder {
     int eid = 0;
     final edgeKeys = <String>{};
 
-    // sort the interections in a segemtn from start to end
+    // sort the interections in a segment from start to end
     // add egdes accordingly
     for(final segment in segments){
       final points = <ui.Offset>[segment.a];
@@ -73,7 +73,9 @@ class GraphBuilder {
 
     final pruned = pruneGraph(vertices, edges);
     final finalVertices = pruned.vertices;
-    final finalEdges = pruned.edges;
+    final bridgeKeys = findBridgeKeys(finalVertices, pruned.edges);
+
+    final finalEdges = pruned.edges.where((e) => !bridgeKeys.contains(edgeKey(e.a.id, e.b.id))).toList();
 
     rebuildOutgoing(finalVertices, finalEdges);
     final faces = traceFaces(finalVertices, finalEdges).where((f) => !f.isOuter).toList(); 
@@ -221,6 +223,62 @@ class GraphBuilder {
     }
     return dedup.values.toList();
   }
+
+  // finds any keys that
+  Set<String> findBridgeKeys(List<Vertex> vertices, List<Edge> edges){
+    final adjacency = <int, List<Edge>>{};
+    for(final v in vertices){
+      adjacency[v.id] = [];
+    }
+
+    for(final e in edges){
+      adjacency[e.a.id]!.add(e);
+      adjacency[e.b.id]!.add(e);
+    }
+
+    final disc = <int, int>{};
+    final low = <int, int>{};
+    final visited = <int>{};
+    final bridges = <String>{};
+
+    int time = 0;
+
+    void dfs(int u, Edge? parentEdge){
+      visited.add(u);
+      disc[u] = time;
+      low[u] = time;
+      time++;
+
+      for(final edge in adjacency[u]!){
+        final v = edge.a.id == u ? edge.b.id : edge.a.id;
+
+        if(parentEdge != null && edge.id == parentEdge.id){
+          continue;
+        }
+
+        if(!visited.contains(v)){
+          dfs(v, edge);
+
+          low[u] = math.min(low[u]!, low[v]!);
+
+          if(low[v]! > disc[u]!){
+            bridges.add(edgeKey(edge.a.id, edge.b.id));
+          }
+        } else {
+          low[u] = math.min(low[u]!, disc[v]!);
+        }
+      }
+    }
+
+    for(final v in vertices){
+      if(!visited.contains(v.id)){
+        dfs(v.id, null);
+      }
+    }
+
+    return bridges;
+  }
+
   // determines if repeat vertex appears
   bool hasRepeatedVertex(List<ui.Offset> points){
       for(int i = 0; i < points.length; i++){
@@ -244,7 +302,6 @@ class GraphBuilder {
 
   final n = vertex.length;
   if(n == 1) return null;
-  
 
   final nextIndex = (index - 1 + n) % n;
   final next = vertex[nextIndex];
@@ -285,7 +342,7 @@ class GraphBuilder {
 
   // removes the longest edge for a face and rebuilds the graph
   PlanarGraph deleteFace(PlanarGraph graph, Face face){
-    final targetfaceEdgeKeys = faceEdgeKeys(graph, face);
+    final targetFaceEdgeKeys = faceEdgeKeys(graph, face);
     final edgeUseCount = <String, int>{};
     for(final f in graph.faces){
       final keys = faceEdgeKeys(graph, f);
@@ -294,56 +351,67 @@ class GraphBuilder {
       }
     }
 
-    final sharedInternalKeys = targetfaceEdgeKeys.where((key){
+    final sharedInternalKeys = targetFaceEdgeKeys.where((key){
       return (edgeUseCount[key] ?? 0) > 1;
     }).toSet();
 
-    final used = <int>{};
-    List<Edge>? bestChain;
-    double bestScore = double.infinity;
-
-    for(final edge in graph.edges){
-      if(used.contains(edge.id)) continue;
-
-      final chain = collectEdgeChain(edge, graph, used);
-      // check if this chain is part of the face AND is internal
-      bool isCandidate = false;
-      for(final e in chain){
+    List<Edge> keptEdges;
+    
+    // no shared boundary, so just delete this face's own edges
+  if(sharedInternalKeys.isEmpty){
+      keptEdges = graph.edges.where((e){
         final key = edgeKey(e.a.id, e.b.id);
-        if(sharedInternalKeys.contains(key)){
-          isCandidate = true;
-          break;
+        return !targetFaceEdgeKeys.contains(key);
+      }).toList();
+    } else {
+
+      final used = <int>{};
+      List<Edge>? bestChain;
+      double bestScore = double.infinity;
+
+      for(final edge in graph.edges){
+        if(used.contains(edge.id)) continue;
+
+        final chain = collectEdgeChain(edge, graph, used);
+        // check if this chain is part of the face AND is internal
+        bool isCandidate = false;
+        for(final e in chain){
+          final key = edgeKey(e.a.id, e.b.id);
+          if(sharedInternalKeys.contains(key)){
+            isCandidate = true;
+            break;
+          }
+        }
+
+        if(!isCandidate) continue;
+        // score = distance of chain midpoint to face centroid
+        double avgX = 0;
+        double avgY = 0;
+        int count = 0;
+
+        for(final e in chain){
+          avgX += e.a.p.dx + e.b.p.dx;
+          avgY += e.a.p.dy + e.b.p.dy;
+          count += 2;
+        }
+        avgX /= count;
+        avgY /= count;
+        final dx = avgX - face.centroid.dx;
+        final dy = avgY - face.centroid.dy;
+        final distSq = dx * dx + dy * dy;
+
+        if(distSq < bestScore){
+          bestScore = distSq;
+          bestChain = chain;
         }
       }
 
-      if(!isCandidate) continue;
-      // score = distance of chain midpoint to face centroid
-      double avgX = 0;
-      double avgY = 0;
-      int count = 0;
-
-      for(final e in chain){
-        avgX += e.a.p.dx + e.b.p.dx;
-        avgY += e.a.p.dy + e.b.p.dy;
-        count += 2;
-      }
-      avgX /= count;
-      avgY /= count;
-      final dx = avgX - face.centroid.dx;
-      final dy = avgY - face.centroid.dy;
-      final distSq = dx * dx + dy * dy;
-
-      if(distSq < bestScore){
-        bestScore = distSq;
-        bestChain = chain;
-      }
+      if(bestChain == null) return graph;
+      final removeIds = bestChain.map((e) => e.id).toSet();
+      keptEdges = graph.edges.where((e){
+        return !removeIds.contains(e.id);
+      }).toList();
     }
-
-    if(bestChain == null) return graph;
-    final removeIds = bestChain.map((e) => e.id).toSet();
-    final keptEdges = graph.edges.where((e){
-      return !removeIds.contains(e.id);
-    }).toList();
 
     final pruned = pruneGraph(graph.vertices, keptEdges);
     final finalVertices = pruned.vertices;
@@ -486,6 +554,8 @@ class PlanarGraph {
   });
   // detects if a point p is in a face of this graph and returns that face if true
   Face? pointInFace(ui.Offset p){
+    Face? best;
+    double? bestAbsArea;
     for(final face in faces){
       bool inside = false;
       int i = 0;
@@ -499,9 +569,15 @@ class PlanarGraph {
         if(intersects){inside = !inside;}
         i++;
       }
-      if(inside){return face;}
+      if(inside){
+        final area = face.signedArea.abs();
+        if(best == null || area < bestAbsArea!){
+          best = face;
+          bestAbsArea = area;
+        }
+      }
     }
-    return null;
+    return best;
   }
 
   Map<String, dynamic> toJson(){
