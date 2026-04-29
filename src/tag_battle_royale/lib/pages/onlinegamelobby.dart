@@ -1440,7 +1440,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     // Lobby, editable fields for host
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      child: ListView(
+      child: Column(
         children: [
           Text('Zone Closure', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),

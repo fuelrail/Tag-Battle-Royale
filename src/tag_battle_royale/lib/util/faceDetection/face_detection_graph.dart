@@ -224,7 +224,9 @@ class GraphBuilder {
     return dedup.values.toList();
   }
 
-  // finds any keys that
+  // finds any keys that lead to bridges between faces
+  // Tarjan's Algorithm
+  // https://www.geeksforgeeks.org/dsa/bridge-in-a-graph/
   Set<String> findBridgeKeys(List<Vertex> vertices, List<Edge> edges){
     final adjacency = <int, List<Edge>>{};
     for(final v in vertices){

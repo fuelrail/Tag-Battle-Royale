@@ -84,18 +84,18 @@ class _MapEditorState extends State<MapEditor> {
                         if(!context.mounted) return;
                         Navigator.push(
                           context,
-                          MaterialPageRoute(
-                            builder: (_) =>ExampleGame(
-                              map: map,
-                            ),
-                          ),
-                        );
                         //   MaterialPageRoute(
-                        //     builder: (_) => MapViewer(
+                        //     builder: (_) =>ExampleGame(
                         //       map: map,
                         //     ),
                         //   ),
                         // );
+                          MaterialPageRoute(
+                            builder: (_) => MapViewer(
+                              map: map,
+                            ),
+                          ),
+                        );
                       },
                       trailing: IconButton(
                         icon: Icon(
