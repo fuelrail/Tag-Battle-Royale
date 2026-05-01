@@ -1,0 +1,1 @@
+This directory orignally contained testing documentation for Tag Battle Royale. This documentation has been relocated to the documentation section.
