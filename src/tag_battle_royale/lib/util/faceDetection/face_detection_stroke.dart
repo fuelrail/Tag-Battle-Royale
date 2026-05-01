@@ -97,9 +97,9 @@ class StrokeBuilder {
   List<ui.Offset> rdpSimplify(List<ui.Offset> points){
     if(points.length <= 2) return points;
 
-    final keendpoint = List<bool>.filled(points.length, false);
-    keendpoint[0] = true;
-    keendpoint[points.length - 1] = true;
+    final keepPoint = List<bool>.filled(points.length, false);
+    keepPoint[0] = true;
+    keepPoint[points.length - 1] = true;
 
     void recurse(int start, int end){
       if(end <= start + 1) return;
@@ -114,7 +114,7 @@ class StrokeBuilder {
         }
       }
       if(maxDistance > simplifyTolerance && index != -1){
-        keendpoint[index] = true;
+        keepPoint[index] = true;
         recurse(start, index);
         recurse(index, end);
       }
@@ -123,7 +123,7 @@ class StrokeBuilder {
     recurse(0, points.length - 1);
     final out = <ui.Offset>[];
     for(int i = 0; i < points.length; i++){
-      if(keendpoint[i]){out.add(points[i]);}
+      if(keepPoint[i]){out.add(points[i]);}
     }
     return out;
   }

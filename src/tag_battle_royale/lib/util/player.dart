@@ -9,6 +9,7 @@ class Player {
     this.lastSeen,
     this.position,
     this.status = 'unknown',
+    this.role,
   });
 
   final String id;
@@ -17,6 +18,7 @@ class Player {
   ui.Offset? position;
   int? lastSeen;
   String status; // 'active', 'stale', 'unknown', 'disconnected', 'hidden'
+  String? role;
 
   void updateColour(Color colour){
     this.colour = colour;
@@ -50,6 +52,7 @@ class Players extends ChangeNotifier {
   void incrementPlayerAge(String id, int time){
     final player = _playersById[id];
     if(player == null || player.lastSeen == null){return;}
+    print(player.lastSeen);
     player.lastSeen = player.lastSeen! + time;
   }
 

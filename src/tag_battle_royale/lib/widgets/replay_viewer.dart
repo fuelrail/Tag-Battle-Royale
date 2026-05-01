@@ -9,6 +9,9 @@ import '../util/faceDetection/face_detection_graph.dart';
 import '../widgets/map_transform.dart';
 import '../widgets/TabButton.dart';
 import '../util/map_file_handler.dart';
+import '../util/mapPainter/closed_zone_painter.dart';
+import '../util/mapPainter/user_painter.dart';
+import '../util/player.dart';
 
 class ReplayViewer extends StatefulWidget {
   const ReplayViewer({
@@ -26,6 +29,8 @@ class _ReplayViewerState extends State<ReplayViewer> {
   Timer? _timer;
 
   final ValueNotifier<double> _currentTime = ValueNotifier<double>(0.0);
+  final ValueNotifier<Set<int>> _closedFaceIds = ValueNotifier<Set<int>>({});
+  final Players _players = Players();
 
   bool showLabel = true;
   bool _isPlaying = false;
@@ -68,6 +73,7 @@ class _ReplayViewerState extends State<ReplayViewer> {
       return;
     }
     _image = await _map!.getImage();
+     _updateReplayVisuals(0.0);
     if(!mounted){return;}
     setState((){});
   }
@@ -76,6 +82,8 @@ class _ReplayViewerState extends State<ReplayViewer> {
   void dispose(){
     _timer?.cancel();
     _currentTime.dispose();
+    _closedFaceIds.dispose();
+    _players.dispose();
     super.dispose();
   }
 
@@ -102,6 +110,7 @@ class _ReplayViewerState extends State<ReplayViewer> {
           return;
         }
         _currentTime.value = nextTime;
+        _updateReplayVisuals(nextTime);
       },
     );
   }
@@ -117,6 +126,7 @@ class _ReplayViewerState extends State<ReplayViewer> {
     _timer?.cancel();
     _timer = null;
     _currentTime.value = 0.0;
+    _updateReplayVisuals(0.0);
     setState(() =>_isPlaying = false);
   }
 
@@ -136,6 +146,7 @@ class _ReplayViewerState extends State<ReplayViewer> {
         _selectedPlayerIds.add(playerID);
       }
     });
+    _updateReplayVisuals(_currentTime.value);
   }
 
   void _collapseBottomBar(){
@@ -147,6 +158,45 @@ class _ReplayViewerState extends State<ReplayViewer> {
       _bottomBarCollapsed = false;
       _activeTab = tab;
     });
+  }
+
+  void _updateReplayVisuals(double time) {
+    _closedFaceIds.value = widget.replayFile.getClosedZoneIdsAtTime(time).toSet();
+
+    for (final replay in widget.replayFile.replays) {
+      final existing = _players.getPlayer(replay.playerID);
+
+      if (existing == null) {
+        _players.addPlayer(
+          Player(
+            id: replay.playerID,
+            name: replay.playerName,
+            colour: Colors.blue,
+          ),
+        );
+      }
+
+      if (!_selectedPlayerIds.contains(replay.playerID)) {
+        _players.updatePlayerPosition(replay.playerID, null, null);
+        continue;
+      }
+
+      final playerState = _getPlayerAtTime(replay, time);
+      final role = playerState.$2 ?? 'runner';
+
+      final player = _players.getPlayer(replay.playerID);
+      if (player != null) {
+        player.updateColour(role == 'chaser' ? Colors.red : Colors.blue);
+        player.role = role;
+        _players.updatePlayerPosition(
+          replay.playerID,
+          playerState.$1,
+          null,
+        );
+      }
+    }
+
+    _players.update();
   }
 
   (ui.Offset?, String?) _getPlayerAtTime(Replay replay, double time){
@@ -259,39 +309,28 @@ class _ReplayViewerState extends State<ReplayViewer> {
                 ValueListenableBuilder<double>(
                   valueListenable: _currentTime,
                   builder: (context, time, _){
-                    final closedFaces = _getClosedFacesAtTime(time);
 
                     return RepaintBoundary(
                       child: CustomPaint(
-                        size: imageSize,
-                        painter: ClosedZoneReplayPainter(
-                          faces: closedFaces,
-                        ),
+                      painter: ClosedZonePainter(
+                        facesNotifier: _closedFaceIds,
+                        faces: _map!.graph.faces,
                       ),
+                    )
                     );
                   },
                 ),
                 ValueListenableBuilder<double>(
                   valueListenable: _currentTime,
                   builder: (context, time, _){
-                    final playerDrawData = selectedReplays.map((replay){
-                      final p = _getPlayerAtTime(replay, time);
-                      return ReplayPlayerDrawData(
-                        position: p.$1,
-                        colour: replay.colour,
-                        label: "${replay.playerName}\n${p.$2 ?? ''}",
-                        role: p.$2 ?? 'runner',
-                      );
-                    }).toList();
-
                     return RepaintBoundary(
                       child: CustomPaint(
-                        size: imageSize,
-                        painter: ReplayPlayersPainter(
-                          players: playerDrawData,
-                          showLabel: showLabel,
-                        ),
+                      painter: UserPainter(
+                        players: _players,
+                        showLabel: showLabel,
+                        replay: true,
                       ),
+                    )
                     );
                   },
                 ),
@@ -400,6 +439,7 @@ class _ReplayViewerState extends State<ReplayViewer> {
                                                   max: _maxTime == 0 ? 1.0 : _maxTime,
                                                   onChanged: (value){
                                                     _currentTime.value = value;
+                                                    _updateReplayVisuals(value);
                                                   },
                                                 ),
                                               );
@@ -570,156 +610,4 @@ enum BottomTab {
   replay,
   players,
   settings,
-}
-
-class ReplayPlayerDrawData {
-  final Offset? position;
-  final Color colour;
-  final String label;
-  final String role;
-
-  ReplayPlayerDrawData({
-    required this.position,
-    required this.colour,
-    required this.label,
-    required this.role,
-  });
-}
-
-class ReplayPlayersPainter extends CustomPainter {
-  final List<ReplayPlayerDrawData> players;
-  final bool showLabel;
-
-  ReplayPlayersPainter({
-    required this.players,
-    required this.showLabel,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size){
-    for(final player in players){
-      final colour = player.role == 'chaser'? Colors.red : Colors.black;
-      if(player.position == null) continue;
-
-      final glowPaint = Paint()
-        ..color = colour.withValues(alpha: 0.25)
-        ..style = PaintingStyle.fill;
-
-      final fillPaint = Paint()
-        ..color = colour
-        ..style = PaintingStyle.fill;
-
-      final strokePaint = Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2;
-
-      canvas.drawCircle(player.position!, 16, glowPaint);
-      canvas.drawCircle(player.position!, 10, fillPaint);
-      canvas.drawCircle(player.position!, 10, strokePaint);
-
-      if(!showLabel) continue;
-
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: player.label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(
-          player.position!.dx + 12,
-          player.position!.dy - 10,
-          textPainter.width + 12,
-          textPainter.height + 6,
-        ),
-        const Radius.circular(8),
-      );
-
-      final bgPaint = Paint()
-        ..color = const Color.fromARGB(160, 0, 0, 0)
-        ..style = PaintingStyle.fill;
-
-      canvas.drawRRect(rect, bgPaint);
-
-      textPainter.paint(
-        canvas,
-        ui.Offset(player.position!.dx + 18, player.position!.dy - 7),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant ReplayPlayersPainter oldDelegate){
-    if(oldDelegate.showLabel != showLabel) return true;
-    if(oldDelegate.players.length != players.length) return true;
-
-    for(int i = 0; i < players.length; i++){
-      final a = oldDelegate.players[i];
-      final b = players[i];
-
-      if(a.position != b.position ||
-          a.colour != b.colour ||
-          a.label != b.label){
-        return true;
-      }
-    }
-
-    return false;
-  }
-}
-
-class ClosedZoneReplayPainter extends CustomPainter {
-  final List<Face> faces;
-
-  ClosedZoneReplayPainter({
-    required this.faces,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size){
-    final fillPaint = Paint()
-      ..color = const Color.fromARGB(120, 255, 0, 0)
-      ..style = PaintingStyle.fill;
-
-    final strokePaint = Paint()
-      ..color = const Color.fromARGB(220, 255, 255, 255)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    for(final face in faces){
-      if(face.polygon.length < 3) continue;
-
-      final path = Path()..moveTo(face.polygon.first.dx, face.polygon.first.dy);
-
-      for(int i = 1; i < face.polygon.length; i++){
-        path.lineTo(face.polygon[i].dx, face.polygon[i].dy);
-      }
-
-      path.close();
-
-      canvas.drawPath(path, fillPaint);
-      canvas.drawPath(path, strokePaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant ClosedZoneReplayPainter oldDelegate){
-    if(oldDelegate.faces.length != faces.length) return true;
-
-    for(int i = 0; i < faces.length; i++){
-      final a = oldDelegate.faces[i];
-      final b = faces[i];
-
-      if(a.faceID != b.faceID) return true;
-    }
-
-    return false;
-  }
 }

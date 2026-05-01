@@ -149,15 +149,6 @@ class GameBanner extends StatelessWidget {
     if (duringGame && currentTime != null) {
       final totalPeriodSeconds = zoneClosePeriod * 60;
       final elapsedSeconds = currentTime! ~/ 1000;
-
-      if (elapsedSeconds >= totalPeriodSeconds * totalZones) {
-        return _banner(
-          color: Colors.blue,
-          title: 'All zones closed',
-          subtitle: 'Time elapsed: ${formatGameTime(gameElapsedSeconds ?? 0)}',
-        );
-      }
-
       final remainingSeconds = totalPeriodSeconds - (elapsedSeconds % totalPeriodSeconds);
       final minutes = remainingSeconds ~/ 60;
       final seconds = remainingSeconds % 60;

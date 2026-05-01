@@ -203,165 +203,187 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body:  Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color.fromARGB(255, 250, 168, 45),
-            Color.fromARGB(255, 250, 144, 45),
-            
-          ],
-        ),
-      ),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('Tag Battle Royale',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: Colors.white,
-                ),
-              ),
-            const SizedBox(height: 8),
-            Text('Choose your connection mode',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Colors.white)),
-            const SizedBox(height: 48),
-
-            // Reconnect error message
-            if (_reconnectError != null) ...[
-              Card(
-                color: Theme.of(context).colorScheme.errorContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(children: [
-                    Icon(Icons.error_outline,
-                        color: Theme.of(context).colorScheme.error),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(_reconnectError!)),
-                  ]),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // Reconnect button
-            if (_savedSession != null) ...[
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.refresh),
-                  label: Text('Reconnect to ${_savedSession!.gameId}'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.teal,
-                    foregroundColor: Colors.white,
+      body: Stack(
+        children: [
+          Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color.fromARGB(255, 250, 168, 45),
+                Color.fromARGB(255, 250, 144, 45),
+                
+              ],
+            ),
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text('Tag Battle Royale',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      color: Colors.white,
+                    ),
                   ),
-                  onPressed: () => _reconnect(context),
-                ),
-              ),
-              const SizedBox(height: 8),
-              // Go away
-              //Align(
-              //  alignment: Alignment.centerRight,
-              //  child: TextButton(
-              //    onPressed: () async {
-              //      await GameSession.clear();
-              //      _checkForSavedSession();
-              //    },
-              //    child: const Text('Dismiss'),
-              //  ),
-              //),
-              //const SizedBox(height: 16),
-            ],
-            if (_savedOfflineSession != null) ...[
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Resume Offline Game'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.teal,
-                    foregroundColor: Colors.white,
+                const SizedBox(height: 8),
+                Text('Choose your connection mode',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: Colors.white)),
+                const SizedBox(height: 48),
+
+                // Reconnect error message
+                if (_reconnectError != null) ...[
+                  Card(
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(children: [
+                        Icon(Icons.error_outline,
+                            color: Theme.of(context).colorScheme.error),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(_reconnectError!)),
+                      ]),
+                    ),
                   ),
-                  onPressed: () => _resumeOffline(context),
+                  const SizedBox(height: 16),
+                ],
+
+                // Reconnect button
+                if (_savedSession != null) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.refresh),
+                      label: Text('Reconnect to ${_savedSession!.gameId}'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () => _reconnect(context),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Go away
+                  //Align(
+                  //  alignment: Alignment.centerRight,
+                  //  child: TextButton(
+                  //    onPressed: () async {
+                  //      await GameSession.clear();
+                  //      _checkForSavedSession();
+                  //    },
+                  //    child: const Text('Dismiss'),
+                  //  ),
+                  //),
+                  //const SizedBox(height: 16),
+                ],
+                if (_savedOfflineSession != null) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Resume Offline Game'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () => _resumeOffline(context),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.onPrimary,
+                      foregroundColor: Theme.of(context).colorScheme.primary,
+                    ),
+                    icon: const Icon(Icons.cloud),
+                    label: const Text('Online'),
+                    onPressed: () => _go(context, GameMode.online),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-            ],
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.onPrimary,
-                  foregroundColor: Theme.of(context).colorScheme.primary,
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.onPrimary,
+                      foregroundColor: Theme.of(context).colorScheme.primary,
+                    ),
+                    icon: const Icon(Icons.bluetooth),
+                    label: const Text('Offline'),
+                    onPressed: () => _go(context, GameMode.offline),
+                  ),
                 ),
-                icon: const Icon(Icons.cloud),
-                label: const Text('Online'),
-                onPressed: () => _go(context, GameMode.online),
-              ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    ),
+                    icon: const Icon(Icons.map),
+                    label: const Text('Map Editor'),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const MapEditor()),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    ),
+                    icon: const Icon(Icons.location_history),
+                    label: const Text('Game Replays'),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ReplayPage()),
+                      );
+                    },
+                  ),
+                ),
+              ]),
             ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.onPrimary,
-                  foregroundColor: Theme.of(context).colorScheme.primary,
-                ),
-                icon: const Icon(Icons.bluetooth),
-                label: const Text('Offline'),
-                onPressed: () => _go(context, GameMode.offline),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                ),
-                icon: const Icon(Icons.map),
-                label: const Text('Map Editor'),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const MapEditor()),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                ),
-                icon: const Icon(Icons.location_history),
-                label: const Text('Game Replays'),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const ReplayPage()),
-                  );
-                },
-              ),
-            ),
-          ]),
+          ),
         ),
-      ),
-      )
-    );
+        Positioned(
+          top: 48,
+          left: 16,
+          child: IconButton(
+            icon: const Icon(Icons.help_outline),
+            color: Colors.white,
+            iconSize: 32,
+            onPressed: () {
+              Navigator.of(context).push(
+                PageRouteBuilder(
+                  opaque: false,
+                  barrierColor: Colors.black.withValues(alpha: .55),
+                  pageBuilder: (_, __, ___) => const AppTutorialOverlay(),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    ),
+  );
   }
 }
 
@@ -608,4 +630,228 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       ),
     );
   }
+}
+
+class AppTutorialOverlay extends StatelessWidget {
+  const AppTutorialOverlay({super.key});
+
+  final List<_TutorialSectionData> _sections = const [
+    _TutorialSectionData(
+      title: 'Welcome to Tag Battle Royale',
+      text:
+          'Tag Battle Royale is designed to organise large scale games of tag.',
+    ),
+   _TutorialSectionData(
+    title: 'Home Page',
+    text:
+        'The Home Page lets you navigate to:\nOnline Mode\nOffline Mode\nThe Map Editor\nThe Replay Viewer\nIf you leave an unfinished game, a reconnect button will appear here.',
+    imagePath: 'assets/tutorial/Homepage.jpg',
+  ),
+
+  _TutorialSectionData(
+    title: 'Map Editor',
+    text:
+        'The Map Editor is used to create the map to play on. First, choose the real world location where the game will be played, then capture the map image.',
+    imagePath: 'assets/tutorial/google_maps.jpg',
+  ),
+
+  _TutorialSectionData(
+    title: 'Drawing Zones',
+    text:
+        'After capturing the map, draw lines on the image to divide it into zones. These zones are used during the game to restrict the runners. You can name the map and name each zone before saving. You can also delete zones',
+    imagePath: 'assets/tutorial/map_editor_tools.jpg',
+  ),
+
+  _TutorialSectionData(
+    title: 'Online Mode',
+    text:
+        'Online Mode uses an internet connection and our server. The host creates the lobby and players join using the code generated. Online Mode keeps players connected during the game and automatically saves a replay when the game ends.',
+  ),
+
+  _TutorialSectionData(
+    title: 'Offline Mode',
+    text:
+        'Offline Mode lets nearby players connect directly to each other. It does not use the online server. Players disconnect during active play, so positions are not shared live and the host will preorder the zone closings. At the end, players reconnect to the host so the replay can be saved.',
+  ),
+
+  _TutorialSectionData(
+    title: 'Lobby Map Tab',
+    text:
+        'The Map tab is where the host selects the map for the game. The host can also choose the order that zones will close. In Online Mode, the host can create a new map from this tab.',
+    imagePath: 'assets/tutorial/onlineMaps.jpg',
+  ),
+
+  _TutorialSectionData(
+    title: 'Zone Closing Order',
+    text:
+        'Zones close during the game based on the order chosen by the host. This controls which areas become unsafe first. In Online Mode, the host can also change the next zone dynamically during the game by selecting a different zone.',
+  ),
+
+  _TutorialSectionData(
+    title: 'Lobby Chat Tab',
+    text:
+        'The Chat tab lets players communicate. Before the game starts, players can use the all chat. During the game, runners and chasers also get separate team chats.',
+    imagePath: 'assets/tutorial/chat.jpg',
+  ),
+
+  _TutorialSectionData(
+    title: 'Lobby Game Tab',
+    text:
+        'The Game tab is where the host manages the lobby. The host can accept incoming players, kick players, change game settings and start the game.',
+    imagePath: 'assets/tutorial/accpet_player.jpg',
+  ),
+
+  _TutorialSectionData(
+    title: 'Game Settings',
+    text:
+        'The host can adjust the main rules before starting. These include the grace period before tagging begins, how often zones close, and other gameplay options that control how the match runs.',
+  ),
+
+  _TutorialSectionData(
+    title: 'Starting the Game',
+    text:
+        'When the host starts the game, players enter the starting phase. The grace period gives players time to spread out before active tagging begins.',
+  ),
+
+  _TutorialSectionData(
+    title: 'During the Game',
+    text:
+        'Players move around the real world area shown on the map. Runners try to avoid chasers and stay inside open zones. Chasers try to tag runners. Closed zones will show runners to the chasers or convert them into a chaser.',
+    imagePath: 'assets/tutorial/during_game.jpg',
+  ),
+
+  _TutorialSectionData(
+    title: 'Player Visibility',
+    text:
+        'In Online Mode, the map can show player positions. Chasers can see other chasers and players who are not in an open zone. This helps enforce the zone rules during play.',
+  ),
+
+  _TutorialSectionData(
+    title: 'Ending the Game',
+    text:
+        'In Online Mode, the game can be ended by the host and the replay is saved automatically. In Offline Mode, each player ends the game on their own device, then reconnects to the host to combine and save the replay.',
+  ),
+
+  _TutorialSectionData(
+    title: 'Replay Viewer',
+    text:
+        'The Replay Viewer lets you watch saved games. You can play or pause the replay, scrub through time, show or hide selected players, toggle nameplates, minimise the controls and delete old replays.',
+    imagePath: 'assets/tutorial/replay_cont.jpg',
+  ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.95),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Column(
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ),
+
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                    child: Column(
+                      children: [
+                        Text(
+                          'How to Play',
+                          textAlign: TextAlign.center,
+                          style:
+                              Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        for (final section in _sections) ...[
+                          _TutorialSection(section: section),
+                          const SizedBox(height: 32),
+                        ],
+
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: FilledButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Got it'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TutorialSection extends StatelessWidget {
+  const _TutorialSection({
+    required this.section,
+  });
+
+  final _TutorialSectionData section;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          section.title,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+
+        const SizedBox(height: 8),
+
+        Text(
+          section.text,
+          textAlign: TextAlign.left,
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+        const SizedBox(height: 16),
+        if(section.imagePath != null)
+          Image.asset(
+            section.imagePath!,
+            fit: BoxFit.contain,
+          ),
+      ],
+    );
+  }
+}
+
+class _TutorialSectionData {
+  final String title;
+  final String text;
+  final String? imagePath;
+
+  const _TutorialSectionData({
+    required this.title,
+    required this.text,
+    this.imagePath,
+  });
 }

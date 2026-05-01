@@ -20,6 +20,7 @@ class GoogleMapsState extends State<GoogleMaps> {
   CameraPosition? _userPosition;
   String? _error;
   LatLngBounds? _imageBounds;
+  double _imageBearing = 0.0;
   bool _showUserLocation = true;
 
   final Completer<GoogleMapController> _controller = Completer<GoogleMapController>();
@@ -146,6 +147,7 @@ class GoogleMapsState extends State<GoogleMaps> {
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,
             rotateGesturesEnabled: false,
+            tiltGesturesEnabled: false,
             onCameraMove: (pos){setState(() => _userPosition = pos);},
             onMapCreated: (GoogleMapController controller){
               if(!_controller.isCompleted){_controller.complete(controller);}

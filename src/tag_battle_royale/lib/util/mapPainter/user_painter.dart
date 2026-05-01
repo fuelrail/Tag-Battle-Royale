@@ -6,10 +6,12 @@ class UserPainter extends CustomPainter{
   UserPainter({
     required this.players,
     this.showLabel = false,
+    this.replay = false,
   }): super(repaint: players);
 
   final Players players;
   final bool showLabel;
+  final bool replay;
 
   static const double _radius = 10;
 

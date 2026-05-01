@@ -13,7 +13,7 @@ class VertexPainter extends CustomPainter{
     for(int i = 0; i < vertice.length; i++){
       final p = vertice[i].p;
   
-      canvas.drawCircle(p, 1, Paint());
+      canvas.drawCircle(p, 4, Paint());
     }
   }
 
