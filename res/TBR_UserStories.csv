@@ -1,0 +1,98 @@
+,,,,
+Map Editor,,,,
+User Story,Input,Expected Output,Actual Output,Result
+User can create map,1. User navigates to map editor. 2. User presses create new map. 3. User selects where to play using the map embed. 4. User captures an image of the area. 5. User draws zones on the image. 6. User names the zones and the map. 7. User saves the map.,"New map is saved with the user-defined image, zones, zone names, and map name.","
+New map is saved with the data defined by the User
+",pass
+User can select where to play using a maps embed,1. User navigates to map editor. 2. User presses create new map. 3. User uses the map embed to move to the desired area.,The map embed navigates to the selected area.,The selected area is navigated to,pass
+User can capture image of where to play,1. User navigates to map editor. 2. User presses create new map. 3. User selects where to play. 4. User captures the image of the selected area.,The selected map area is captured as an image for editing.,The selected area is captured,pass
+User can draw on image to define zones,1. User opens the map editor with a captured map image. 2. User draws zone boundaries on the image.,Drawn strokes appear on the image and define zone boundaries. Faces are defined,The faces are found and the zone bounds are drawn,pass
+User can use finger to draw curves with pen tool,1. User opens the map editor. 2. User selects the pen tool. 3. User drags their finger across the image.,Curved freehand lines are drawn on the image following the user’s input. Faces are defined,The faces are found and the zone bounds are drawn,pass
+User can use straight line tool for straight lines,1. User opens the map editor. 2. User selects the straight line tool. 3. User places line points on the image.,Straight line segments are drawn between the selected points. Faces are defied,The faces are found and the zone bounds are drawn,pass
+User can use eraser to erase strokes,1. User opens the map editor. 2. User draws on the image. 3. User selects the eraser tool. 4. User erases part of a stroke.,The erased stroke segment is removed from the image.,The stroke is removed from the faces,pass
+User can undo previous action,1. User performs an action in the map editor. 2. User presses undo.,The most recent action is reversed.,"Action is reversed including redo, straightline tool, pen tool and eraser tool",pass
+User can redo undo action,1. User performs an action in the map editor. 2. User presses undo. 3. User presses redo.,The previously undone action is restored.,undo action is undone,pass
+User can save map,1. User creates a map in the map editor. 2. User presses save.,The map is saved and can be accessed later.,Map is saved,pass
+User can name map,1. User creates a map. 2. User enters a name for the map.,The map name is stored with the map.,Map name is saved,pass
+User can name zones in map,1. User creates a map with zones. 2. User exits draw mode 3. User selects a zone. 4. User enters a name for the zone.,The zone name is stored with that zone.,Zone name is saved,pass
+User can view created map,1. User navigates to saved maps. 2. User selects a created map.,The selected saved map is displayed.,Map can be viewed,pass
+User can delete map,1. User navigates to saved maps. 2. User selects a map. 3. User presses delete. 4. User confirms deletion.,The selected map is removed from saved maps.,Map is deleted,pass
+When a user deletes a map any replays for that map are deleted,1. User navigates to saved maps. 2. User deletes a map that has replay files linked to it.,The selected map is deleted and all replay files linked to that map are also deleted.,Map and replays are deleted,pass
+,,,,
+Lobbies,,,,
+User Story,Input,Expected Output,Actual Output,Result
+User can host online game,1. User navigates to the online screen. 2. User selects host online game.,An online lobby is created and the user becomes the host.,Lobby is hosted,pass
+User can host offline game,1. User navigates to the offline screen. 2. User selects host offline game.,An offline lobby is created and the user becomes the host.,Lobby is hosted,pass
+User can join online game with a code,1. User navigates to join online game. 2. User enters a valid game code. 3. User confirms join.,The user joins the corresponding online lobby and can be accepted by the host.,User joins and waits for host to accept them,pass
+User can join nearby offline game,1. User navigates to join offline game. 2. User selects a nearby lobby from the discovered list.,The user joins the selected nearby offline lobby and can be accepted by the host.,User joins and waits for host to accept them,pass
+,,,,
+Lobby phase,,,,
+User Story,Input,Expected Output,Actual Output,Result
+Host can change lobby settings,1. Host enters the lobby. 2. Host changes one or more lobby settings.,The updated lobby settings are updated,settings are updated,pass
+Host can select map to play in and zone close order for that map,1. Host enters the lobby. 2. Host selects a map. 3. Host sets the order that zones will close.,The selected map and zone close order are stored for the game.,Map and zone close order are stored,pass
+Host can accept or deny joining players before they join,1. A player requests to join the lobby. 2. Host reviews the join request. 3. Host accepts or denies it.,The player is either admitted to the lobby or refused entry.,Host can accept or deny joining players,pass
+Host can kick player,1. Host enters the lobby. 2. Player joins lobby 3. Host selects a player. 4. Host chooses kick.,The selected player is removed from the lobby.,player is kicked,pass
+Player can send messages in all chat,1. Player opens all chat in the lobby. 2. Player types a message. 3. Player sends the message.,The message is sent to the all chat channel.,Message is sent,pass
+Players receive messages in all chat,1. A player sends a message in all chat. 2. Other players are in the lobby.,All players in the lobby receive and can view the message in all chat.,Mesage is recieved,pass
+Host can start game,1. Host is in the lobby with at least one runner. 2. Host selects map and close order. 3. Host presses start game.,The game begins for all players in the lobby and the starting phase initiates,The game starts,pass
+(online) Player who has left can quickly connect back from main menu screen,1. Player joins a lobby. 2. Player disconnects from the session. 3. Player reconnects to the same lobby from main menu.,Player can quickly reassume their position in a game they left,Player will be treated as a new player,pass
+,,,,
+Starting Phase,,,,
+User Story,Input,Expected Output,Actual Output,Result
+"Map, game settings and zone close order is sent to all players in game",1. Host starts the game.,All players receive the selected map data and other data for the game and return ack,Map and others is recieved and ack returned,pass
+Grace period starts,1. Host starts the game.,The game enters the grace period state.,Grace period starts,pass
+Runners see banner to run away during grace period,1. Game enters grace period. 2. A player has the runner role.,The runner sees a banner instructing them to run away.,Banner is displayed,pass
+Chasers see banner to stay in place during grace period,1. Game enters grace period. 2. A player has the chaser role.,The chaser sees a banner instructing them to stay in place.,Banner is displayed,pass
+All players see time until grace period ends,1. Game enters grace period.,A countdown showing the remaining grace period time is displayed to all players.,Countdown is displayed,pass
+Map and zones are displayed,1. Game starts.,The map and its zones are displayed to each player.,Map is displayed,pass
+Players can only see their own position during grace period,1. Game is in grace period. 2. Player views the map.,Each player can see only their own position and not the positions of others.,Only position of user is drawn,pass
+Runners cannot become chasers during grace period,1. Game is in grace period. 2. Runner holds become chaser button.,The runner remains a runner during the grace period.,Runner's role does not switch,pass
+Players positions are recorded for the replay,1. Game starts. 2. Replay recording starts.,Player position data is recorded over time for replay use.,Replay data is recorded,pass
+,,,,
+Active Phase,,,,
+User Story,Input,Expected Output,Actual Output,Result
+(online) Player can send messages in all chat,1. Player opens all chat in the lobby. 2. Player types a message. 3. Player sends the message.,The message is sent to the all chat channel.,Message is sent,pass
+(online) Players receive messages in all chat,1. A player sends a message in all chat. 2. Other players are in the lobby.,All players in the lobby receive and can view the message in all chat.,Mesage is recieved,pass
+(online) Only runners can send messages in runner chat,1. Runner opens runner chat. 2. Runner types and sends a message.,The message is sent in runner chat. Non-runners cannot send messages there.,Message is only seen by runners,pass
+(online) Only runners receive messages in runner chat,1. A runner sends a message in runner chat.,Only runners receive and can view the message in runner chat.,Only Runnenrs see the message,pass
+(online) Only chasers can send messages in chaser chat,1. Chaser opens chaser chat. 2. Chaser types and sends a message.,The message is sent in chaser chat. Non-chasers cannot send messages there.,Message is only seen by chasers,pass
+(online) Only chasers receive messages in chaser chat,1. A chaser sends a message in chaser chat.,Only chasers receive and can view the message in chaser chat.,Only Chasers see the message,pass
+Zones will close in the order set by the host,1. Host has selects zone close order before the game. 2. The game starts.,Zones close in the order defined by the host.,Zones close in correct order,pass
+(online) Host can change the next zone to close,1. Game starts. 2. Host selects a different zone as the next one to close.,The next zone to close is updated.,zone close order is updated correctly,pass
+Chasers can see next zone to close,1. Game has started. 2. Player is a chaser.,The chaser can see which zone will close next.,Next zone to close is shown,pass
+All players can see closed zones on the map,1. One or more zones have closed during the game.,Closed zones are visibly marked on the map for all players.,Closed zones are displayed,pass
+Runners cannot see the next zone to close,1. Game has started. 2. Player is a runner.,The runner cannot see which zone will close next.,Next zone to close is not displayed,pass
+All players can see the time until the next zone closes,1. Game has started.,A countdown showing time until the next zone closes is displayed to all players.,Countdown to zone close is displayed,pass
+(online) Chasers can see runners on the map when the runners are outside an open zone,1. Game has started. 2. A runner is outside an open zone. 3. A player is a chaser.,The chaser can see that runner’s location on the map.,Runners are displayed when outside open zones,pass
+(online) Chasers cannot see runners on the map when the runners are inside an open zone,1. Game has started. 2. A runner is inside an open zone. 3. A player is a chaser.,The chaser cannot see that runner’s location on the map.,runners are not shown when inside an open zone,pass
+Runners cannot see chasers on the map,1. Game has started. 2. Player is a runner.,The runner cannot see chaser locations on the map.,chasers and other runners are not displayed to runners,pass
+Runners can turn into chasers,1. Game has started. 2. A runner holds the i was caught button.,The runner’s role changes to chaser.,runner becomes chaser,pass
+(online) When all runners are chasers the game ends,1. Game has started. 2. The final remaining runner becomes a chaser.,The game ends automatically.,Game ends,pass
+(online) The host can end the game,1. Game is in progress. 2. Host presses end game.,The game ends for all players.,Game ends,pass
+"(online) When a player sees another player on the map, they can also see how old that location is.",1. A player is visible on the map to another player.,The visible player’s displayed location includes an indication of how old that location data is.,the locations age is displayed in seconds,pass
+(offline) all players can locally end thier game,1. players play an offline game. 2. players can end the game for themself and go to the end screen,end screen is shown,end screen is shwon,pass
+"Player who has left can quickly connect back from main menu screen
+",1. Player joins a lobby. 2. Player disconnects from the session. 3. Player reconnects to the same lobby from main menu.,Player can quickly reassume their position in a game they left,Players can resume their session,pass
+,,,,
+Finished Phase,,,,
+User Story,Input,Expected Output,Actual Output,Result
+(online) Player caught last is displayed as the winner,1. Game ends after all runners become chasers.,The player caught last is displayed as the winner.,players are ranked in revese order they were caught,pass
+(online) Players send their replay information to the Host,1. Game ends.,Each player’s replay data is sent to the host.,players send there replay data,pass
+(offline) Players reconnect and send replay information to the host,1. Game ends. 2. Each player presses the reconnect and send replay buttom.,players reconnect and send replay data,players reconnect and replay data is sent,pass
+Host combines the replays information and zone closing into a replay file,1. Game ends. 2. Host receives replay data from players. 3. Host processes replay and zone closure data.,A complete replay file is created by the host.,Host creates replay file,pass
+Host sends complete replay file to players,1. Host has created the replay file after the game ends.,The replay file is sent from the host to the players.,host sends completed replay file,pass
+Players download the replay and map files,1. Players receive replay and map file transfer after the game ends.,The replay and required map files are downloaded to the players’ devices.,replay is downloaded and map file is download if it doesnt already exist,pass
+,,,,
+Replay Viewer,,,,
+User Story,Input,Expected Output,Actual Output,Result
+Users can view replays of games they’ve played,1. User navigates to replay viewer. 2. User selects a saved replay.,The selected replay is opened and displayed.,replays are displayed,pass
+Users can see zone closings in the replay,1. User opens a replay.,The replay shows when and where zones closed during the game.,zone closings are shown as occured in the game played,pass
+Users can see the position off all others players during the game in the replay,1. User opens a replay.,The replay displays the recorded positions of all players over time.,all players are displayed at there location at a specific time during the game,pass
+Users displayed on the replay have their name and role (chaser or runner) shown,1. User opens a replay.,Player markers in the replay display the player’s name and role.,player roles are displayed including role changes,pass
+Users can scroll through the replay,1. User opens a replay. 2. User drags or uses replay controls to move through time.,The replay position changes to the selected point in time.,replay positions are displayed correctly,pass
+Users can toggle the nameplate for the players,1. User opens a replay. 2. User toggles nameplate display.,Player nameplates are shown or hidden.,nameplates are toggleable,pass
+Users can pause and unpause the replay,1. User opens a replay. 2. User presses pause or play.,The replay pauses or resumes.,the replay can pause or resume,pass
+Users can toggle displaying specific players in the replay,1. User opens a replay. 2. User selects which players to show or hide.,Only the selected players are displayed in the replay.,unselected players are no longer displayed,pass
+Users can minimise the controls for the replay,1. User opens a replay. 2. User presses the minimise control button.,The replay controls are collapsed or minimised.,the controls are minimised,pass
+Users can delete a replay,1. User navigates to saved replays. 2. User selects a replay. 3. User presses delete. 4. User confirms deletion.,The selected replay is removed from saved replays.,replay is deleted,pass
+,,,,
