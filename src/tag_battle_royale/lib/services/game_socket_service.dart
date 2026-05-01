@@ -9,7 +9,6 @@ typedef LocationBroadcastCallback = void Function(Map<String, PlayerLocationInfo
 typedef ChatMessageCallback = void Function(ChatMessage message);
 typedef ChatHistoryCallback = void Function(String channel, List<ChatMessage> messages);
 
-/// Player location info received from the server's broadcast.
 class PlayerLocationInfo {
   final String playerId;
   final String playerName;
@@ -31,16 +30,9 @@ class PlayerLocationInfo {
     this.disconnectedAge,
   });
 
-  /// Whether the server has a recent location for this player.
   bool get hasLocation => status == "active";
-
-  /// Whether the player's location is outdated
   bool get isStale => status == "stale";
-
-  /// Whether the player has never sent a location.
   bool get isUnknown => status == "unknown";
-
-  /// Whether the player's socket dropped. May reconnect.
   bool get isDisconnected => status == "disconnected";
 
   factory PlayerLocationInfo.fromJson(Map<String, dynamic> json) {
@@ -58,9 +50,6 @@ class PlayerLocationInfo {
   }
 }
 
-/// Manages the Socket.IO connection to the game server.
-///
-/// Callbacks are used to notify of events. 
 class GameSocketService {
   final String serverUrl;
   late IO.Socket _socket;
@@ -317,7 +306,6 @@ class GameSocketService {
     });
   }
 
-  /// Confirm that we received and processed the map data.
   void confirmMapReceived() {
     _socket.emit('game:map:received');
   }

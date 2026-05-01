@@ -30,13 +30,20 @@ class UserPainter extends CustomPainter{
     required Player player,
     required double radius,
   }){
-    if(player.position == null){return;}
+    if(player.position == null) return;
+    if(player.status == 'hidden') return;
+
+    final bool isFaded = player.status == 'stale' || player.status == 'disconnected';
+    final Color dotColour = isFaded
+        ? Color.lerp(player.colour, Colors.grey, 0.6)!
+        : player.colour;
+
     final glowPaint = Paint()
-      ..color = player.colour.withValues(alpha: 0.25)
+      ..color = dotColour.withValues(alpha: 0.25)
       ..style = PaintingStyle.fill;
 
     final fillPaint = Paint()
-      ..color = player.colour
+      ..color = dotColour
       ..style = PaintingStyle.fill;
 
     final strokePaint = Paint()
@@ -51,9 +58,19 @@ class UserPainter extends CustomPainter{
     if(!showLabel) return;
     if(player.name.trim().isEmpty) return;
 
+    // Build label text based on status
+    final String labelText;
+    if (player.status == 'disconnected') {
+      labelText = '${player.name}\ndisconnected';
+    } else if (player.status == 'stale' && player.lastSeen != null) {
+      labelText = '${player.name}\nlast seen ${player.lastSeen! ~/ 1000}s ago';
+    } else {
+      labelText = player.name;
+    }
+
     final textPainter = TextPainter(
       text: TextSpan(
-        text: player.lastSeen == null ? player.name : "${player.name}\n${player.lastSeen! ~/ 1000}/s ago",
+        text: labelText,
         style: const TextStyle(
           color: Colors.white,
           fontSize: 12,
@@ -85,7 +102,7 @@ class UserPainter extends CustomPainter{
         ..style = PaintingStyle.fill;
 
       canvas.drawRRect(rect, bgPaint);
-
+      
       textPainter.paint(
         canvas,
         ui.Offset(player.position!.dx + 18, player.position!.dy - 7),

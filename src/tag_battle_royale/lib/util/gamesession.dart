@@ -9,6 +9,7 @@ class GameSession {
   static const String _prefsKey = 'online_session_exists';
   static const String _fileName = 'online_game_session.json';
   static const String _replayFileName = 'online_game_replay.json';
+  static const String _mapFileName = 'online_game_map.json';
 
   // Save the current game session to disk.
   static Future<void> save({
@@ -22,8 +23,6 @@ class GameSession {
     List<int>? faceOrder,
     int? closureIntervalMs,
     int? gracePeriodMs,
-    Map<String, dynamic>? mapJson,
-    Map<String, dynamic>? replayJson,
     bool? replaySubmitted,
     bool? replayFileAssembled,
     bool? replayFileSentToServer,
@@ -47,8 +46,6 @@ class GameSession {
       'faceOrder': faceOrder,
       'closureIntervalMs': closureIntervalMs,
       'gracePeriodMs': gracePeriodMs,
-      'mapJson': mapJson,
-      'replayJson': replayJson,
       'replaySubmitted': replaySubmitted,
       'replayFileAssembled': replayFileAssembled,
       'replayFileSentToServer': replayFileSentToServer,
@@ -67,6 +64,12 @@ class GameSession {
     await prefs.setBool(_prefsKey, true);
   }
 
+  // Save the map data separately (called once when the map is received).
+  static Future<void> saveMap(Map<String, dynamic> mapJson) async {
+    final file = await _getMapFile();
+    await file.writeAsString(jsonEncode(mapJson));
+  }
+
   static Future<bool> exists() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_prefsKey) ?? false;
@@ -83,12 +86,21 @@ class GameSession {
       final content = await file.readAsString();
       final json = jsonDecode(content) as Map<String, dynamic>;
 
-      // Check for separate replay file
+      // Load replay from separate file
       final replayFile = await _getReplayFile();
       if (await replayFile.exists()) {
         try {
           final replayContent = await replayFile.readAsString();
           json['replayJson'] = jsonDecode(replayContent);
+        } catch (_) {}
+      }
+
+      // Load map from separate file
+      final mapFile = await _getMapFile();
+      if (await mapFile.exists()) {
+        try {
+          final mapContent = await mapFile.readAsString();
+          json['mapJson'] = jsonDecode(mapContent);
         } catch (_) {}
       }
 
@@ -108,13 +120,27 @@ class GameSession {
       final replayFile = await _getReplayFile();
       if (await replayFile.exists()) await replayFile.delete();
     } catch (_) {}
+    try {
+      final mapFile = await _getMapFile();
+      if (await mapFile.exists()) await mapFile.delete();
+    } catch (_) {}
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefsKey);
+  }
+
+  static Future<File> _getFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/$_fileName');
   }
 
   static Future<File> _getReplayFile() async {
     final dir = await getApplicationDocumentsDirectory();
     return File('${dir.path}/$_replayFileName');
+  }
+
+  static Future<File> _getMapFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/$_mapFileName');
   }
 
   // Update just the replay data in the existing session.
@@ -131,11 +157,6 @@ class GameSession {
       json['role'] = role;
       await file.writeAsString(jsonEncode(json));
     } catch (_) {}
-  }
-
-  static Future<File> _getFile() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/$_fileName');
   }
 }
 
@@ -214,6 +235,7 @@ class GameSessionData {
       outOfZoneTimerEnabled: json['outOfZoneTimerEnabled'],
       outOfZoneTimerMs: json['outOfZoneTimerMs'],
       outOfZoneRemainingMs: json['outOfZoneRemainingMs'],
+      inBadZone: json['inBadZone'],
     );
   }
 }

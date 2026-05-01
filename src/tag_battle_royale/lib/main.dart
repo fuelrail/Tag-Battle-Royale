@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:unique_names_generator/unique_names_generator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '/pages/offlinegamelobby.dart';
 import '/pages/onlinegamelobby.dart';
@@ -27,6 +28,14 @@ void main() async {
 
 enum GameMode { online, offline }
 enum ConnectionRole { host, join }
+
+const String defaultServerUrl = 'https://tag-battle-royale.fly.dev/';
+const String _serverUrlPrefsKey = 'custom_server_url';
+
+Future<String> getServerUrl() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getString(_serverUrlPrefsKey) ?? defaultServerUrl;
+}
 
 String generateRandomName() {
   String name;
@@ -372,6 +381,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   final _lobbyCtrl = 'Game-${Random().nextInt(10000)}';
   final _nameCtrl = TextEditingController(text: generateRandomName());
   final _codeCtrl = TextEditingController();
+  int _iconTapCount = 0;
 
   bool get isOnline => widget.mode == GameMode.online;
 
@@ -385,6 +395,54 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     _nameCtrl.dispose();
     _codeCtrl.dispose();
     super.dispose();
+  }
+
+  // --- Server URL config ---
+
+  Future<void> _showServerUrlDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+    final current = prefs.getString(_serverUrlPrefsKey) ?? defaultServerUrl;
+    final controller = TextEditingController(text: current);
+
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Server URL'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'URL',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await prefs.remove(_serverUrlPrefsKey);
+              controller.text = defaultServerUrl;
+            },
+            child: const Text('Reset'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final url = controller.text.trim();
+              if (url.isEmpty || url == defaultServerUrl) {
+                await prefs.remove(_serverUrlPrefsKey);
+              } else {
+                await prefs.setString(_serverUrlPrefsKey, url);
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   // --- Lobby Push ---
@@ -481,10 +539,19 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(
-              isOnline ? Icons.cloud : Icons.wifi_off,
-              size: 56,
-              color: Theme.of(context).colorScheme.primary,
+            GestureDetector(
+              onTap: isOnline ? () {
+                _iconTapCount++;
+                if (_iconTapCount >= 5) {
+                  _iconTapCount = 0;
+                  _showServerUrlDialog();
+                }
+              } : null,
+              child: Icon(
+                isOnline ? Icons.cloud : Icons.wifi_off,
+                size: 56,
+                color: Theme.of(context).colorScheme.primary,
+              ),
             ),
             const SizedBox(height: 16),
             Text('$modeLabel Mode',

@@ -829,9 +829,6 @@ function registerGameHandlers(io, socket, gameManager) {
 function _finishStarting(io, game, gameManager) {
   console.log(`[game:start] All players confirmed map, starting game ${game.id}`);
 
-    // Start the game with the broadcast callback.
-    // Every tick, this function is called and sends the
-    // location payload to every player in the game room.
   game.start(makeBroadcastCallback(io, game));
 
   io.to(game.id).emit("game:started", {

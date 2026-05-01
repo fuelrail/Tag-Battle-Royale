@@ -46,27 +46,26 @@ class OnlineConnectionScreen extends StatefulWidget {
 }
 
 class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
-  static const String serverUrl = 'https://tag-battle-royale.fly.dev/';
+  late final String _serverUrl;
 
+  // Connection
   GameSocketService? _socket;
   LocationService? _location;
   late ConfettiController _confettiController;
   final GlobalKey<LobbyLayoutState> _lobbyKey = GlobalKey<LobbyLayoutState>();
-
-  // Connection
   String _status = 'Disconnected';
   String? _gameId;
   String? _hostId;
   bool _pendingAcceptance = false;
 
-  // Players
+  // Lobby data
   final List<PlayerData> _players = [];
   final List<PendingPlayer> _pendingPlayers = [];
   final Map<String, Color> _playerColourMap = {};
   final ScrollController _playersScrollController = ScrollController();
   final List<String> _log = [];
 
-  // display
+  // Display
   final Players _displayPlayers = Players();
   final ValueNotifier<int?> _displayCurrentZone = ValueNotifier(null);
   final ValueNotifier<Set<int>> _displayClosedZones = ValueNotifier({});
@@ -82,24 +81,21 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   };
   String _activeChannel = 'all';
 
-  // Map
+  // Map & config
   MapFile? _selectedMap; // host only
-  bool _isStarting = false;
   MapFile? _receivedMap;
   List<int>? _faceOrder;
   int _closureMinutes = 15;
   int _gracePeriodSeconds = 90;
-  final TextEditingController _closureMinutesController =
-      TextEditingController(text: '15');
-  final TextEditingController _gracePeriodController =
-      TextEditingController(text: '90');
+  final TextEditingController _closureMinutesController = TextEditingController(text: '15');
+  final TextEditingController _gracePeriodController = TextEditingController(text: '90');
   int _outOfZoneMinutes = 5;
   bool _outOfZoneTimerEnabled = false;
-  final TextEditingController _outOfZoneMinutesController =
-      TextEditingController(text: '5');
+  final TextEditingController _outOfZoneMinutesController = TextEditingController(text: '5');
   int? _outOfZoneSecondsRemaining;
 
-  // Game state
+  // Active game
+  bool _isStarting = false;
   bool _gameStarted = false;
   bool _gameFinished = false;
   String? _finishReason; // "all_caught" or "host_ended"
@@ -129,20 +125,16 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   bool _replayFileSentToServer = false;
   Map<String, dynamic>? _assembledReplayJson;
 
-  // --- Get properties ---
-
+  // Gets
   bool get isHost => widget.isHostOverride ?? (widget.role == ConnectionRole.host);
   bool get _isReconnecting => widget.playerId != null;
-
   String get _myRole {
     return _findPlayer(_socket?.currentPlayerId)?.role ?? 'runner';
   }
-
   bool get _inGracePeriod {
     if (_gameStartedAt == null || _activeGracePeriodMs <= 0) return false;
     return DateTime.now().difference(_gameStartedAt!).inMilliseconds < _activeGracePeriodMs;
   }
-
   Set<int> get _closedZones {
     if (_gameStartedAt == null || _activeFaceOrder.isEmpty) return {};
     final elapsed = DateTime.now().difference(_gameStartedAt!).inMilliseconds - _activeGracePeriodMs;
@@ -164,38 +156,20 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     return _players.where((p) => p.id == id).firstOrNull;
   }
 
-  // --- Lifecycle ---
-
-  void _setUp(){
-    _location?.getClosedZones = () => _closedZones;
-    _location?.updateCurrentZone = _updateCurrentZone;
-    _location?.updatePlayerPosition = _updatePlayerPosition;
-    _location?.inClosedZone = _inBadZone;
-    _location?.updateInClosedZone = _updateInBadZone;
-    _location?.outOfZoneTimerEnabled = _activeOutOfZoneTimerEnabled;
-    _location?.outOfZoneTimerMs = _activeOutOfZoneTimerMs;
-    _location?.onOutOfZoneTimerTick = (remaining) {
-      if (!mounted) return;
-      setState(() => _outOfZoneSecondsRemaining = remaining);
-      if (remaining % 15 == 0 && _gameStarted && !_gameFinished) {
-        _saveFullSession();
-      }
-    };
-    _location?.onOutOfZoneExpired = () {
-      if (!mounted) return;
-      final myId = _socket?.currentPlayerId;
-      if (myId != null && _myRole == 'runner') {
-        _addLog('Auto-caught: out-of-zone timer expired');
-        _doRoleSwitch(myId);
-      }
-    };
-  }
+  // --------------------------------------------------------------------------
+  //  Lifecycle
+  // --------------------------------------------------------------------------
 
   @override
   void initState() {
     super.initState();
     _confettiController = ConfettiController(duration: const Duration(seconds: 3));
-    _socket = GameSocketService(serverUrl: serverUrl);
+    _initConnection();
+  }
+
+  Future<void> _initConnection() async {
+    _serverUrl = await getServerUrl();
+    _socket = GameSocketService(serverUrl: _serverUrl);
     _location = LocationService(gameSocketService: _socket!);
     _location!.onLog = (msg) => _addLog(msg);
 
@@ -341,6 +315,31 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _addLog('Resumed from saved session (connecting in background...)');
   }
 
+  void _setUp(){
+    _location?.getClosedZones = () => _closedZones;
+    _location?.updateCurrentZone = _updateCurrentZone;
+    _location?.updatePlayerPosition = _updatePlayerPosition;
+    _location?.inClosedZone = _inBadZone;
+    _location?.updateInClosedZone = _updateInBadZone;
+    _location?.outOfZoneTimerEnabled = _activeOutOfZoneTimerEnabled;
+    _location?.outOfZoneTimerMs = _activeOutOfZoneTimerMs;
+    _location?.onOutOfZoneTimerTick = (remaining) {
+      if (!mounted) return;
+      setState(() => _outOfZoneSecondsRemaining = remaining);
+      if (remaining % 15 == 0 && _gameStarted && !_gameFinished) {
+        _saveFullSession();
+      }
+    };
+    _location?.onOutOfZoneExpired = () {
+      if (!mounted) return;
+      final myId = _socket?.currentPlayerId;
+      if (myId != null && _myRole == 'runner') {
+        _addLog('Auto-caught: out-of-zone timer expired');
+        _doRoleSwitch(myId);
+      }
+    };
+  }
+
   @override
   void dispose() {
     _unhookCallbacks();
@@ -363,7 +362,27 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     super.dispose();
   }
 
-  // --- Grace period timer ---
+  // --------------------------------------------------------------------------
+  //  Logging
+  // --------------------------------------------------------------------------
+
+  void _addLog(String message) {
+    if (!mounted) return;
+    print('${DateTime.now().toIso8601String().substring(11, 19)} $message');
+    setState(() {
+      _log.insert(0, '${DateTime.now().toIso8601String().substring(11, 19)} $message');
+      if (_log.length > 100) _log.removeLast();
+    });
+  }
+
+  void _showSnackbarAndLeave(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    Navigator.popUntil(context, (route) => route.isFirst);
+  }
+
+  // --------------------------------------------------------------------------
+  //  Grace period
+  // --------------------------------------------------------------------------
 
   void _startGraceCountdown() {
     _graceTimer?.cancel();
@@ -393,7 +412,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       });
     });
   }
-  // timer for updating time till zone closes
+
   void _startBannerTimer() {
     _bannerTimer?.cancel();
     _bannerTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -410,6 +429,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _bannerTimer?.cancel();
     _bannerTimer = null;
   }
+
+  // --------------------------------------------------------------------------
+  //  Display helpers
+  // --------------------------------------------------------------------------
 
   void _updateInBadZone(bool isInBadZone){
     setState(() => _inBadZone = isInBadZone);
@@ -428,7 +451,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
   }
 
   void _updatePlayerPosition(Offset? pos){
-    if(_socket!.currentPlayerId == null){return;}
+    if(_socket?.currentPlayerId == null){return;}
     _displayPlayers.updatePlayerPosition(_socket!.currentPlayerId!, pos, null);
     _displayPlayers.update();
   }
@@ -443,7 +466,10 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       }
     }
   }
-  // --- Replay ---
+
+  // --------------------------------------------------------------------------
+  //  Replay persistence
+  // --------------------------------------------------------------------------
 
   void _startReplay() {
     final me = _findPlayer(_socket?.currentPlayerId);
@@ -487,43 +513,6 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     }
   }
 
-  void _saveFullSession() {
-    if (_socket?.currentGameId == null || _socket?.currentPlayerId == null) return;
-    GameSession.save(
-      gameId: _socket!.currentGameId!,
-      playerId: _socket!.currentPlayerId!,
-      playerName: widget.playerName,
-      isHost: isHost,
-      gameStarted: _gameStarted,
-      role: _myRole,
-      gameStartedAt: _gameStartedAt?.millisecondsSinceEpoch,
-      faceOrder: _activeFaceOrder.isNotEmpty ? _activeFaceOrder : null,
-      closureIntervalMs: _activeClosureIntervalMs,
-      gracePeriodMs: _activeGracePeriodMs,
-      mapJson: _receivedMap?.toJson(),
-      replayJson: _replay?.toJson(),
-      replaySubmitted: _replaySubmitted,
-      replayFileAssembled: _replayFileAssembled,
-      replayFileSentToServer: _replayFileSentToServer,      
-      players: _players.map((p) => {
-        'id': p.id,
-        'name': p.name,
-        'role': p.role,
-        'isHost': p.isHost,
-        'connected': p.connected,
-        'caughtOrder': p.caughtOrder,
-        'caughtAtSeconds': p.caughtAtSeconds,
-      }).toList(),
-      gameFinished: _gameFinished,
-      finishReason: _finishReason,
-      finalElapsedSeconds: _finalElapsedSeconds,
-      outOfZoneTimerEnabled: _activeOutOfZoneTimerEnabled,
-      outOfZoneTimerMs: _activeOutOfZoneTimerMs,
-      outOfZoneRemainingMs: _location?.outOfZoneRemainingMs,
-      inBadZone: _inBadZone,
-    );
-  }
-
   Future<void> _restoreOrStartReplay() async {
     final session = await GameSession.load();
     if (session?.replayJson != null && _gameStartedAt != null) {
@@ -552,6 +541,49 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       _startReplay();
     }
   }
+
+  // --------------------------------------------------------------------------
+  //  Session persistence
+  // --------------------------------------------------------------------------
+
+  void _saveFullSession() {
+    if (_socket?.currentGameId == null || _socket?.currentPlayerId == null) return;
+    GameSession.save(
+      gameId: _socket!.currentGameId!,
+      playerId: _socket!.currentPlayerId!,
+      playerName: widget.playerName,
+      isHost: isHost,
+      gameStarted: _gameStarted,
+      role: _myRole,
+      gameStartedAt: _gameStartedAt?.millisecondsSinceEpoch,
+      faceOrder: _activeFaceOrder.isNotEmpty ? _activeFaceOrder : null,
+      closureIntervalMs: _activeClosureIntervalMs,
+      gracePeriodMs: _activeGracePeriodMs,
+      replaySubmitted: _replaySubmitted,
+      replayFileAssembled: _replayFileAssembled,
+      replayFileSentToServer: _replayFileSentToServer,      
+      players: _players.map((p) => {
+        'id': p.id,
+        'name': p.name,
+        'role': p.role,
+        'isHost': p.isHost,
+        'connected': p.connected,
+        'caughtOrder': p.caughtOrder,
+        'caughtAtSeconds': p.caughtAtSeconds,
+      }).toList(),
+      gameFinished: _gameFinished,
+      finishReason: _finishReason,
+      finalElapsedSeconds: _finalElapsedSeconds,
+      outOfZoneTimerEnabled: _activeOutOfZoneTimerEnabled,
+      outOfZoneTimerMs: _activeOutOfZoneTimerMs,
+      outOfZoneRemainingMs: _location?.outOfZoneRemainingMs,
+      inBadZone: _inBadZone,
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  //  Replay exchange
+  // --------------------------------------------------------------------------
 
   void _submitReplay() {
     if (_replay == null || _replaySubmitted) return;
@@ -632,7 +664,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
       setState(() {
         _replayFileAssembled = true;
-        _socket!.hasReplay = true;
+        _socket?.hasReplay = true;
       });
       _saveFullSession();
 
@@ -672,7 +704,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       }
       setState(() {
         _replayFileAssembled = true;
-        _socket!.hasReplay = true;
+        _socket?.hasReplay = true;
       });
       _saveFullSession();
 
@@ -687,7 +719,9 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     }
   }
 
-  // --- Game finished ---
+  // --------------------------------------------------------------------------
+  //  End game
+  // --------------------------------------------------------------------------
 
   void _onGameFinished(Map<String, dynamic> data) {
     _stopBannerTimer(); 
@@ -715,7 +749,87 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     });
   }
 
-  // --- Callbacks ---
+  Future<void> _hostEndGame() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('End game?'),
+        content: const Text('This will end the game for all players.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('End Game')),
+        ],
+      ),
+    );
+    if (confirmed == true) _socket?.endGame();
+  }
+
+  // --------------------------------------------------------------------------
+  //  Leave confirmation
+  // --------------------------------------------------------------------------
+
+  /// Show a confirmation box when leaving a game.
+  Future<bool> _confirmLeave() async {
+    final String title;
+    final String content;
+
+    if (_gameFinished) {
+      if (isHost) {
+        if (_replayFileSentToServer) {
+          // Host has sent assembled replay, just leave
+          return true;
+        }
+        title = 'Leave game?';
+        content = _replayFileAssembled
+            ? 'The assembled replay has not been sent to the server yet.'
+            : "This game's replay has not been generated.";
+      } else {
+        if (_replayFileAssembled) {
+          // Non-host received and saved replay, just leave
+          return true; 
+        }
+        if (_replaySubmitted) {
+          title = 'Leave game?';
+          content = 'You have not received the assembled replay yet.';
+        } else {
+          title = 'Leave game?';
+          content = 'Your replay has not been sent.';
+        }
+      }
+    } else if (_gameStarted) {
+      title = 'Leave game?';
+      content = 'You will be marked as disconnected. You can reconnect later from the main menu.';
+    } else if (isHost) {
+      title = 'Disband game?';
+      content = 'Leaving will disband the game for all players. Are you sure?';
+    } else {
+      title = 'Leave game?';
+      content = 'Are you sure you want to leave?';
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Stay'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  // --------------------------------------------------------------------------
+  //  Callbacks
+  // --------------------------------------------------------------------------
 
   void _setupCallbacks() {
     _socket!.onConnected = () {
@@ -909,6 +1023,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
         _socket!.hasMap = true;
         _activeOutOfZoneTimerEnabled = _outOfZoneTimerEnabled;
         _activeOutOfZoneTimerMs = _outOfZoneMinutes * 60 * 1000;
+        GameSession.saveMap(_receivedMap!.toJson());
       }
 
       // Save session for reconnection
@@ -961,6 +1076,7 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
 
         _location?.map = _receivedMap;
         _socket!.hasMap = true;
+        GameSession.saveMap(_receivedMap!.toJson());
 
         if (_gameStarted && !_location!.isTracking) {
           _updateLocationRole();
@@ -998,18 +1114,28 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
       _lastBroadcastTime ??= now;
       final deltaMs = now - _lastBroadcastTime!;
 
+      // Mark players not in this broadcast as hidden
+      final broadcastIds = players.keys.toSet();
+      for (final player in _displayPlayers.all) {
+        if (player.id == _socket?.currentPlayerId) continue; // skip self
+        if (!broadcastIds.contains(player.id)) {
+          _displayPlayers.updatePlayerStatus(player.id, 'hidden');
+        }
+      }
+
       for(final entry in players.entries){
         final p = entry.value;
 
         final hasPosition = p.x != null && p.y != null;
-        final isActive = p.status == "active";
 
-        if(isActive && hasPosition){
+        if(hasPosition){
           final point = ui.Offset(p.x!, p.y!);
           _displayPlayers.updatePlayerPosition(p.playerId, point, p.locationAge,);
         }else{
           _displayPlayers.incrementPlayerAge( p.playerId, deltaMs);
         }
+
+        _displayPlayers.updatePlayerStatus(p.playerId, p.status);
 
         final posText = hasPosition
             ? '(${p.x!.toStringAsFixed(1)}, ${p.y!.toStringAsFixed(1)})'
@@ -1154,7 +1280,9 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _socket?.onError = null;
   }
 
-  // --- Player list ---
+  // --------------------------------------------------------------------------
+  //  Player list management
+  // --------------------------------------------------------------------------
 
   void _updatePlayerList(List players) {
     // Preserve existing roles across updates
@@ -1233,7 +1361,9 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     _location?.role = _myRole;
   }
 
-  // --- Role switching ---
+  // --------------------------------------------------------------------------
+  //  Role switching
+  // --------------------------------------------------------------------------
 
   void _switchRole(String playerId) {
     if (playerId == _hostId) return;
@@ -1292,103 +1422,344 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     }
   }
 
-  // --- End game ---
+  // --------------------------------------------------------------------------
+  //  UI Builders
+  // --------------------------------------------------------------------------
 
-  Future<void> _hostEndGame() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('End game?'),
-        content: const Text('This will end the game for all players.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('End Game')),
-        ],
-      ),
-    );
-    if (confirmed == true) _socket?.endGame();
-  }
-
-  // --- Helpers ---
-
-  void _addLog(String message) {
-    if (!mounted) return;
-    print('${DateTime.now().toIso8601String().substring(11, 19)} $message');
-    setState(() {
-      _log.insert(0, '${DateTime.now().toIso8601String().substring(11, 19)} $message');
-      if (_log.length > 100) _log.removeLast();
-    });
-  }
-
-  void _showSnackbarAndLeave(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-    Navigator.popUntil(context, (route) => route.isFirst);
-  }
-
-  /// Show a confirmation box when leaving a game.
-  Future<bool> _confirmLeave() async {
-    final String title;
-    final String content;
-
-    if (_gameFinished) {
-      if (isHost) {
-        if (_replayFileSentToServer) {
-          // Host has sent assembled replay, just leave
-          return true;
-        }
-        title = 'Leave game?';
-        content = _replayFileAssembled
-            ? 'The assembled replay has not been sent to the server yet.'
-            : "This game's replay has not been generated.";
-      } else {
-        if (_replayFileAssembled) {
-          // Non-host received and saved replay, just leave
-          return true; 
-        }
-        if (_replaySubmitted) {
-          title = 'Leave game?';
-          content = 'You have not received the assembled replay yet.';
-        } else {
-          title = 'Leave game?';
-          content = 'Your replay has not been sent.';
-        }
-      }
-    } else if (_gameStarted) {
-      title = 'Leave game?';
-      content = 'You will be marked as disconnected. You can reconnect later from the main menu.';
-    } else if (isHost) {
-      title = 'Disband game?';
-      content = 'Leaving will disband the game for all players. Are you sure?';
-    } else {
-      title = 'Leave game?';
-      content = 'Are you sure you want to leave?';
+  Widget _buildGameTab(BuildContext context) {
+    // If not connected, don't display game tab
+    if (_pendingAcceptance) {
+      return _buildPendingView(context);
     }
 
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(content),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Stay'),
+    if (!_gameStarted &&
+        (_status == 'Disconnected' ||
+            _status == 'Reconnecting...' ||
+            _status == 'Error' ||
+            _gameId == null)) {
+      return _buildLoadingView(context);
+    }
+
+    return Stack(
+      children: [
+        Column(
+          children: [
+            _buildTopSection(context),
+            Expanded(
+              child: DefaultTabController(
+                length: 3,
+                initialIndex: 1,
+                child: Column(
+                  children: [
+                    const TabBar(tabs: [
+                      Tab(text: 'Rules'),
+                      Tab(text: 'Players'),
+                      Tab(text: 'Logs'),
+                      ]
+                    ),
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          _buildRulesSubTab(),
+                          _buildPlayersSubTab(),
+                          _buildLogsSubTab(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        // Confetti overlay
+        if (_gameFinished)
+          Align(
+            alignment: Alignment.topCenter,
+            child: ConfettiWidget(
+              confettiController: _confettiController,
+              blastDirectionality: BlastDirectionality.explosive,
+              shouldLoop: false,
+              numberOfParticles: 15,
+              maxBlastForce: 12,
+              minBlastForce: 3,
+              emissionFrequency: 0.03,
+              gravity: 0.2,
+            ),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Leave'),
+      ],
+    );
+  }
+
+  Widget _buildPendingView(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: 16),
+          const Text('Waiting for host to accept...'),
+          const SizedBox(height: 8),
+          Text(
+            _status == 'Connected' ? 'Connected' : _status,
+            style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildLoadingView(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Status/actions
+          if (_status == 'Disconnected' || _status == 'Reconnecting...')
+            const Center(child: CircularProgressIndicator())
+          else if (_status == 'Error')
+            Center(
+              child: Column(
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                  const SizedBox(height: 12),
+                  const Text('Failed to connect to server'),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () => Navigator.popUntil(context, (route) => route.isFirst),
+                    child: const Text('Go Back'),
+                  ),
+                ],
+              ),
+            )
+          else if (_gameId == null)
+            const Center(
+              child: Column(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 12),
+                  Text('Setting up game…'),
+                ],
+              ),
+            ),
+          const Spacer(),
         ],
       ),
     );
-    return result ?? false;
   }
 
   // --------------------------------------------------------------------------
-  //  Ui Builders
+  //  Top Section
   // --------------------------------------------------------------------------
 
-  // --- Sub Tab Builders for Game Tab ---
+  Widget _buildTopSection(BuildContext context) {
+    if (_gameFinished) return _buildFinishedTopSection(context);
+    if (_gameStarted) return _buildActiveTopSection(context);
+    return _buildLobbyTopSection(context);
+  }
+
+  Widget _buildFinishedTopSection(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        children: [
+          Text(
+            'Game Ended',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Colors.amber.shade700, fontWeight: FontWeight.bold),
+          ),
+          if (_finalElapsedSeconds != null) ...[
+            const SizedBox(height: 4),
+            Text('Duration: ${formatGameTime(_finalElapsedSeconds!)}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ],
+          const SizedBox(height: 4),
+          Text('Code: $_gameId',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          if (isHost) ...[
+            const SizedBox(height: 4),
+            Text('Replays received: ${_receivedReplays.length}/${_players.length}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            if (!_replayFileAssembled) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.build),
+                  label: Text('Assemble Replay (${_receivedReplays.length}/${_players.length})'),
+                  onPressed: _assembleReplay,
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveTopSection(BuildContext context) {
+    final disconnected = _players.where((p) => !p.connected).length;
+    final countText = '${_players.length} player${_players.length == 1 ? '' : 's'}';
+    final disconnectedText = disconnected > 0 ? ', $disconnected disconnected' : '';
+    
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        children: [
+          Text(
+            'Game in progress',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Colors.green,
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Code: $_gameId',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$countText$disconnectedText',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          if (_gameStartedAt != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Time Elapsed: ${formatGameTime(DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0)}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+          ],
+          if (isHost) ...[
+            const SizedBox(height: 12),
+            HoldButton(
+              label: 'Manual End Game (hold)',
+              onComplete: _hostEndGame,
+              color: Theme.of(context).colorScheme.onPrimary,
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              textColor: Theme.of(context).colorScheme.onPrimary,
+              holdDuration: Duration(seconds: 2),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLobbyTopSection(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        children: [
+          // Game code
+          Text('Game Code',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 4),
+          Text(
+            _gameId!,
+            style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 4,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${_players.length} player${_players.length == 1 ? '' : 's'} connected',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 16),
+
+          // Select a map
+          if (isHost && _selectedMap == null && !_isStarting)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Select a map in the Map tab to start',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ),
+
+          // One Runner required
+          if (isHost && !_players.any((p) => p.role == 'runner') && !_isStarting)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'At least one Runner is required to start',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ),
+
+          // Start / waiting
+          if (isHost)
+            _isStarting
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(strokeWidth: 2),
+                        SizedBox(width: 12),
+                        Text('Starting game...'),
+                      ],
+                    ),
+                  )
+                : SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Start Game'),
+                      onPressed: (_selectedMap == null || _faceOrder == null) //!_players.any((p) => p.role == 'runner'))
+                          ? null
+                          : () {
+                              setState(() => _isStarting = true);
+                              _socket?.startGame(
+                                _selectedMap!.toJson(),
+                                faceOrder: _faceOrder!,
+                                closureIntervalMs: _closureMinutes * 60 * 1000,
+                                gracePeriodMs: _gracePeriodSeconds * 1000,
+                                outOfZoneTimerEnabled: _outOfZoneTimerEnabled,
+                                outOfZoneTimerMs: _outOfZoneMinutes * 60 * 1000,
+                              );
+                              _addLog('Starting game, sending map to players…');
+                            },
+                    ),
+                  )
+          else
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(strokeWidth: 2),
+                  SizedBox(width: 12),
+                  Text('Waiting for host to start…'),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  //  Rules Sub Tab
+  // --------------------------------------------------------------------------
 
   Widget _buildRulesSubTab() {
     // Non-host can't see rules until game starts
@@ -1530,7 +1901,69 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     );
   }
 
-  // --- Players sub-tab ---
+  // --------------------------------------------------------------------------
+  //  Players Sub Tab
+  // --------------------------------------------------------------------------
+
+  Widget _buildPendingPlayerCard(PendingPlayer pending) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 6),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+        child: Row(children: [
+          Container(
+            width: 4,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.orange,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                bottomLeft: Radius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              pending.playerName,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: Colors.orange,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() => _pendingPlayers.removeWhere((p) => p.socketId == pending.socketId));
+              _socket?.acceptPlayer(pending.socketId);
+            },
+            style: TextButton.styleFrom(
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Accept',
+                style: TextStyle(color: Colors.green, fontSize: 13)),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() => _pendingPlayers.removeWhere((p) => p.socketId == pending.socketId));
+              _socket?.rejectPlayer(pending.socketId);
+            },
+            style: TextButton.styleFrom(
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Remove',
+                style: TextStyle(color: Colors.red, fontSize: 13)),
+          ),
+        ]),
+      ),
+    );
+  }
 
   Widget _buildPlayersSubTab() {
     if (_players.isEmpty && _pendingPlayers.isEmpty) {
@@ -1816,67 +2249,9 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     print("new zones $newZoneOrder");
   }
 
-  Widget _buildPendingPlayerCard(PendingPlayer pending) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 6),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-        child: Row(children: [
-          Container(
-            width: 4,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.orange,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                bottomLeft: Radius.circular(12),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              pending.playerName,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-                color: Colors.orange,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() => _pendingPlayers.removeWhere((p) => p.socketId == pending.socketId));
-              _socket?.acceptPlayer(pending.socketId);
-            },
-            style: TextButton.styleFrom(
-              minimumSize: Size.zero,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: const Text('Accept',
-                style: TextStyle(color: Colors.green, fontSize: 13)),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() => _pendingPlayers.removeWhere((p) => p.socketId == pending.socketId));
-              _socket?.rejectPlayer(pending.socketId);
-            },
-            style: TextButton.styleFrom(
-              minimumSize: Size.zero,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: const Text('Remove',
-                style: TextStyle(color: Colors.red, fontSize: 13)),
-          ),
-        ]),
-      ),
-    );
-  }
-
-  // --- Logs sub-tab ---
+  // --------------------------------------------------------------------------
+  //  Logs Sub Tab
+  // --------------------------------------------------------------------------
 
   Widget _buildLogsSubTab() {
     return ListView.builder(
@@ -1889,338 +2264,9 @@ class _OnlineConnectionScreenState extends State<OnlineConnectionScreen> {
     );
   }
 
-  // --- Game Tab Builder ---
-
-  Widget _buildGameTab(BuildContext context) {
-    // If not connected, don't display game tab
-    if (_pendingAcceptance) {
-      return _buildPendingView(context);
-    }
-
-    if (!_gameStarted &&
-        (_status == 'Disconnected' ||
-            _status == 'Reconnecting...' ||
-            _status == 'Error' ||
-            _gameId == null)) {
-      return _buildLoadingView(context);
-    }
-
-    return Stack(
-      children: [
-        Column(
-          children: [
-            _buildTopSection(context),
-            Expanded(
-              child: DefaultTabController(
-                length: 3,
-                initialIndex: 1,
-                child: Column(
-                  children: [
-                    const TabBar(tabs: [
-                      Tab(text: 'Rules'),
-                      Tab(text: 'Players'),
-                      Tab(text: 'Logs'),
-                      ]
-                    ),
-                    Expanded(
-                      child: TabBarView(
-                        children: [
-                          _buildRulesSubTab(),
-                          _buildPlayersSubTab(),
-                          _buildLogsSubTab(),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        // Confetti overlay
-        if (_gameFinished)
-          Align(
-            alignment: Alignment.topCenter,
-            child: ConfettiWidget(
-              confettiController: _confettiController,
-              blastDirectionality: BlastDirectionality.explosive,
-              shouldLoop: false,
-              numberOfParticles: 15,
-              maxBlastForce: 12,
-              minBlastForce: 3,
-              emissionFrequency: 0.03,
-              gravity: 0.2,
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildPendingView(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 16),
-          const Text('Waiting for host to accept...'),
-          const SizedBox(height: 8),
-          Text(
-            _status == 'Connected' ? 'Connected' : _status,
-            style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-          ),
-        ]),
-      ),
-    );
-  }
-
-  Widget _buildLoadingView(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Status/actions
-          if (_status == 'Disconnected' || _status == 'Reconnecting...')
-            const Center(child: CircularProgressIndicator())
-          else if (_status == 'Error')
-            Center(
-              child: Column(
-                children: [
-                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                  const SizedBox(height: 12),
-                  const Text('Failed to connect to server'),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: () => Navigator.popUntil(context, (route) => route.isFirst),
-                    child: const Text('Go Back'),
-                  ),
-                ],
-              ),
-            )
-          else if (_gameId == null)
-            const Center(
-              child: Column(
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 12),
-                  Text('Setting up game…'),
-                ],
-              ),
-            ),
-          const Spacer(),
-        ],
-      ),
-    );
-  }
-
-  // --- Top section ---
-
-  Widget _buildTopSection(BuildContext context) {
-    if (_gameFinished) return _buildFinishedTopSection(context);
-    if (_gameStarted) return _buildActiveTopSection(context);
-    return _buildLobbyTopSection(context);
-  }
-
-  Widget _buildFinishedTopSection(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: Column(
-        children: [
-          Text(
-            'Game Ended',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.amber.shade700, fontWeight: FontWeight.bold),
-          ),
-          if (_finalElapsedSeconds != null) ...[
-            const SizedBox(height: 4),
-            Text('Duration: ${formatGameTime(_finalElapsedSeconds!)}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
-          ],
-          const SizedBox(height: 4),
-          Text('Code: $_gameId',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
-          if (isHost) ...[
-            const SizedBox(height: 4),
-            Text('Replays received: ${_receivedReplays.length}/${_players.length}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            if (!_replayFileAssembled) ...[
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.build),
-                  label: Text('Assemble Replay (${_receivedReplays.length}/${_players.length})'),
-                  onPressed: _assembleReplay,
-                ),
-              ),
-            ],
-          ],
-        ],
-      ),
-    );
-  }
-
-    Widget _buildActiveTopSection(BuildContext context) {
-      final disconnected = _players.where((p) => !p.connected).length;
-      final countText = '${_players.length} player${_players.length == 1 ? '' : 's'}';
-      final disconnectedText = disconnected > 0 ? ', $disconnected disconnected' : '';
-      
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-        child: Column(
-          children: [
-            Text(
-              'Game in progress',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Colors.green,
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Code: $_gameId',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '$countText$disconnectedText',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            if (_gameStartedAt != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Time Elapsed: ${formatGameTime(DateTime.now().difference(_gameStartedAt!).inMilliseconds / 1000.0)}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
-              ),
-            ],
-            if (isHost) ...[
-              const SizedBox(height: 12),
-              HoldButton(
-                label: 'Manual End Game (hold)',
-                onComplete: _hostEndGame,
-                color: Theme.of(context).colorScheme.onPrimary,
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                textColor: Theme.of(context).colorScheme.onPrimary,
-                holdDuration: Duration(seconds: 2),
-              ),
-            ],
-          ],
-        ),
-      );
-    }
-
-Widget _buildLobbyTopSection(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: Column(
-        children: [
-          // Game code
-          Text('Game Code',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
-          const SizedBox(height: 4),
-          Text(
-            _gameId!,
-            style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 4,
-                ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${_players.length} player${_players.length == 1 ? '' : 's'} connected',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-          ),
-          const SizedBox(height: 16),
-
-          // Select a map
-          if (isHost && _selectedMap == null && !_isStarting)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                'Select a map in the Map tab to start',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
-              ),
-            ),
-
-          // One Runner required
-          if (isHost && !_players.any((p) => p.role == 'runner') && !_isStarting)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                'At least one Runner is required to start',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
-              ),
-            ),
-
-          // Start / waiting
-          if (isHost)
-            _isStarting
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(strokeWidth: 2),
-                        SizedBox(width: 12),
-                        Text('Starting game...'),
-                      ],
-                    ),
-                  )
-                : SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: FilledButton.icon(
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Text('Start Game'),
-                      onPressed: (_selectedMap == null || _faceOrder == null) //!_players.any((p) => p.role == 'runner'))
-                          ? null
-                          : () {
-                              setState(() => _isStarting = true);
-                              _socket!.startGame(
-                                _selectedMap!.toJson(),
-                                faceOrder: _faceOrder!,
-                                closureIntervalMs: _closureMinutes * 60 * 1000,
-                                gracePeriodMs: _gracePeriodSeconds * 1000,
-                                outOfZoneTimerEnabled: _outOfZoneTimerEnabled,
-                                outOfZoneTimerMs: _outOfZoneMinutes * 60 * 1000,
-                              );
-                              _addLog('Starting game, sending map to players…');
-                            },
-                    ),
-                  )
-          else
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(strokeWidth: 2),
-                  SizedBox(width: 12),
-                  Text('Waiting for host to start…'),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // --- Map tab ---
+  // --------------------------------------------------------------------------
+  //  Map Tab
+  // --------------------------------------------------------------------------
 
   Widget _buildMapTab(BuildContext context) {
     // During lobby, host selects a map
@@ -2283,7 +2329,9 @@ Widget _buildLobbyTopSection(BuildContext context) {
     return const Center(child: Text('Waiting for map data...'));
   }
 
-  // --- Build ---
+  // --------------------------------------------------------------------------
+  //  Build
+  // --------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {

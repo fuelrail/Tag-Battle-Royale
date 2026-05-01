@@ -31,31 +31,23 @@ class LocationService {
   bool _socketConnected = false;
   MapFile? map;
   String role = 'runner';
-
-  /// During grace period, runners are always hidden.
   bool inGracePeriod = false;
 
-  /// Get the current set of closed zone faceIDs.
   Set<int> Function()? getClosedZones;
-  // provided by lobby and updates the current zone for displaying
-  void Function(int? id)? updateCurrentZone;
+  void Function(int? id)? updateCurrentZone; 
   void Function(Offset pos)? updatePlayerPosition;
   void Function(bool inClosedZone)? updateInClosedZone;
   bool inClosedZone = false;
-  /// Called each time a position is sent.
   void Function(Offset position, int? zone, String role)? onFrameRecorded;
 
-  // Out-of-zone auto-catch timer
-  bool outOfZoneTimerEnabled = false;
+  bool outOfZoneTimerEnabled = false; // for optional rule
   int outOfZoneTimerMs = 300000; // 5 minutes default
   int _outOfZoneRemainingMs = 0;
   int _gpsMissCount = 0;
   Timer? _outOfZoneTimer;
 
-  /// Called every second with remaining seconds.
   void Function(int remainingSeconds)? onOutOfZoneTimerTick;
-  /// Called when the out-of-zone timer expires (runner should be auto-caught).
-  void Function()? onOutOfZoneExpired;
+  void Function()? onOutOfZoneExpired; // runner should be caught
 
   int get outOfZoneRemainingMs => _outOfZoneRemainingMs;
   set outOfZoneRemainingMs(int value) => _outOfZoneRemainingMs = value;

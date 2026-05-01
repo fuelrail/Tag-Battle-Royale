@@ -10,6 +10,7 @@ class OfflineGameSession {
   static const String _prefsKey = 'offline_session_exists';
   static const String _fileName = 'offline_game_session.json';
   static const String _replayFileName = 'offline_game_replay.json';
+  static const String _mapFileName = 'offline_game_map.json';
 
   final String playerName;
   final String displayName;
@@ -64,8 +65,6 @@ class OfflineGameSession {
         'faceOrder': faceOrder,
         'closureIntervalMs': closureIntervalMs,
         'gracePeriodMs': gracePeriodMs,
-        'mapJson': mapJson,
-        'replayJson': replayJson,
         'players': players,
         'gameFinished': gameFinished,
         'finalElapsedSeconds': finalElapsedSeconds,
@@ -106,12 +105,28 @@ class OfflineGameSession {
     return File('${dir.path}/$_fileName');
   }
 
+  static Future<File> _getReplayFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/$_replayFileName');
+  }
+
+  static Future<File> _getMapFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/$_mapFileName');
+  }
+
   // Save session to disk and set the exists flag.
   static Future<void> save(OfflineGameSession session) async {
     final file = await _getFile();
     await file.writeAsString(jsonEncode(session.toJson()));
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_prefsKey, true); 
+  }
+
+  // Save the map data separately (called once at game start).
+  static Future<void> saveMap(Map<String, dynamic> mapJson) async {
+    final file = await _getMapFile();
+    await file.writeAsString(jsonEncode(mapJson));
   }
 
   // Check if an offline session exists.
@@ -131,12 +146,21 @@ class OfflineGameSession {
       final content = await file.readAsString();
       final json = jsonDecode(content) as Map<String, dynamic>;
 
-      // Check for separate replay file
+      // Load replay from separate file
       final replayFile = await _getReplayFile();
       if (await replayFile.exists()) {
         try {
           final replayContent = await replayFile.readAsString();
           json['replayJson'] = jsonDecode(replayContent);
+        } catch (_) {}
+      }
+
+      // Load map from separate file
+      final mapFile = await _getMapFile();
+      if (await mapFile.exists()) {
+        try {
+          final mapContent = await mapFile.readAsString();
+          json['mapJson'] = jsonDecode(mapContent);
         } catch (_) {}
       }
 
@@ -157,13 +181,12 @@ class OfflineGameSession {
       final replayFile = await _getReplayFile();
       if (await replayFile.exists()) await replayFile.delete();
     } catch (_) {}
+    try {
+      final mapFile = await _getMapFile();
+      if (await mapFile.exists()) await mapFile.delete();
+    } catch (_) {}
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefsKey);
-  }
-
-  static Future<File> _getReplayFile() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/$_replayFileName');
   }
 
   // Update just the replay data in the existing session.

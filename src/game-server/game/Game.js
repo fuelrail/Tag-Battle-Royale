@@ -87,7 +87,7 @@ class Game {
     return Array.from(this.players.values()).map((p) => p.toJSON());
   }
 
-    // --- Pending players ---
+  // --- Pending players ---
 
   addPendingPlayer(socketId, playerName) {
     this.pendingPlayers.set(socketId, { socketId, playerName });
