@@ -1,30 +1,11 @@
-# CA400 template repo
+# Tag Battle Royale
 
-This is a template for CA400 projects.
+Tag Battle Royale is an android application that facilitates a traditional game of Tag but on a much larger scale. The gameplay can be broadly described as this: A map is used to create borders in which the game is played. The map contains zones of play which are closed periodically throughout the game to restrict where players can move and bring them closer together. There are two groups of players, Runners and Chasers. The objective of the Chaser is to tag all Runners which converts their role to Chaser. The last Runner to be tagged is deemed the winner.
 
-## 1. Create your repo
+The application procides functionality in four areas. 
+1. Map Editor
+2. Online Mode
+3. Offline Mode
+4. Replay Viewer
 
-One person from your project team should fork this repo, then add other teammates as project members on GitLab.
-
-## 2. Name your repo appropriately
-
-The name of your project must be of the form `2024-ca400-XXXXXXX`, where "`XXXXXXX`"
-should be replaced with your usernames (e.g. `2024-ca400-sblott-pclarke`).
-**Note** that the year should be set as appropriate to your year of study. For example, in the
-2022/2023 academic year this would change to '2023-ca400-sblott-pclarke'), 
-in the 2023/2024 academic year this would change to '2024-ca400-sblott-pclarke'), etc. 
-
-It is the *name of your repo* which matters (not the name of your project).
-
-You can change the name of your repo on GitLab under:
-
-- Settings / General / Advanced / Change path
-
-It looks like this:
-
-![change-repo-path](./res/repo-change-path.png "Change repo path.")
-
-You should replace all of this file with a README describing your own project.
-
-## Additional resources
-
+For more information see the functional specification and the user manual
