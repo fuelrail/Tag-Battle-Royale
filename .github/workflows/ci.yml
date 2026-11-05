@@ -21,11 +21,35 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-latest
-    container: ghcr.io/cirruslabs/flutter:stable
     steps:
+      - name: Free disk space
+        working-directory: /
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /usr/local/share/boost /usr/local/share/powershell \
+            /usr/local/share/chromium /usr/local/lib/node_modules \
+            /opt/hostedtoolcache/CodeQL /opt/microsoft /opt/google
+          sudo docker image prune --all --force || true
+          df -h /
       - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory '*'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
       - run: flutter pub get
+      - name: Limit Gradle memory for CI
+        run: |
+          mkdir -p ~/.gradle
+          cat > ~/.gradle/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError
+          org.gradle.daemon=false
+          kotlin.daemon.jvmargs=-Xmx1g
+          EOF
       - run: flutter build apk --debug
       - uses: actions/upload-artifact@v4
         with:
